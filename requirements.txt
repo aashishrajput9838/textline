@@ -3,3 +3,4 @@ flask-socketio
 pillow
 pyperclip
 google-genai
+openai
