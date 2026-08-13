@@ -1,3 +1,4 @@
+import sys
 import os
 import time
 import io
@@ -10,8 +11,14 @@ from google import genai
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 
+# PyInstaller creates a temp folder and stores path in _MEIPASS
+if getattr(sys, 'frozen', False):
+    template_dir = os.path.join(sys._MEIPASS, 'templates')
+else:
+    template_dir = 'templates'
+
 # Initialize Flask App & SocketIO
-app = Flask(__name__)
+app = Flask(__name__, template_folder=template_dir)
 app.config['SECRET_KEY'] = 'clipboard_gemini_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
