@@ -52,8 +52,13 @@ def load_api_keys_map():
     for env_var, env_val in os.environ.items():
         if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
             raw_key_id = env_var[15:]
-            if raw_key_id.lower() not in [k.lower() for k in keys_map]:
-                keys_map[raw_key_id] = env_val
+            if raw_key_id.lower() == "textline_gemini_9838_alreasoningvalidationsystem":
+                canonical_id = "textline_gemini_9838_AlReasoningValidationSystem"
+            else:
+                canonical_id = raw_key_id
+
+            if canonical_id.lower() not in [k.lower() for k in keys_map]:
+                keys_map[canonical_id] = env_val
     return keys_map
 
 API_KEYS_MAP = load_api_keys_map()
@@ -115,9 +120,17 @@ def generate_content_openai_fallback(prompt, base64_image_url):
         print(f"[!] OpenAI Fallback Error: {oai_err}")
     return None
 
+# Project Metadata Mapping (associates safe key IDs to separate project metadata)
+PROJECT_METADATA_MAP = {
+    "textline_gemini_9838_AlReasoningValidationSystem": {
+        "project_number": "333673007466",
+        "project_name": "textline_gemini_9838_AlReasoningValidationSystem"
+    }
+}
+
 def generate_content_with_fallback(contents, base64_image_url=None):
     """
-    Executes content generation using structured Gemini key IDs (98381 -> 983810, aspirinexar).
+    Executes content generation using structured Gemini key IDs.
     Fail-Fast: Skips invalid/dummy/unauthorized keys immediately on first error.
     If ALL Gemini keys fail, gracefully attempts OpenAI (gpt-4o-mini).
     Returns tuple: (raw_answer_text, metadata_dict).
@@ -157,6 +170,7 @@ def generate_content_with_fallback(contents, base64_image_url=None):
                         "provider": "Google Gemini",
                         "model": model_name,
                         "key_id": key_id,
+                        "project_number": PROJECT_METADATA_MAP.get(key_id, {}).get("project_number", ""),
                         "is_fallback": attempt_count > 1
                     }
                     return response.text, meta
@@ -299,10 +313,15 @@ def discover_all_gemini_keys():
     for env_var, env_val in os.environ.items():
         if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
             raw_key_id = env_var[15:]
-            normalized_id = raw_key_id.lower()
+            if raw_key_id.lower() == "textline_gemini_9838_alreasoningvalidationsystem":
+                canonical_id = "textline_gemini_9838_AlReasoningValidationSystem"
+            else:
+                canonical_id = raw_key_id
+
+            normalized_id = canonical_id.lower()
             if normalized_id not in seen_normalized:
                 seen_normalized.add(normalized_id)
-                discovered_keys[raw_key_id] = env_val
+                discovered_keys[canonical_id] = env_val
 
     return discovered_keys
 
