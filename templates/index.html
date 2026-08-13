@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Textline - Clipboard Gemini AI Dashboard</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0c0f17;
+            --card-bg: rgba(22, 27, 44, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-primary: #6366f1;
+            --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            --accent-glow: rgba(99, 102, 241, 0.35);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            
+            --status-idle: #6b7280;
+            --status-processing: #f59e0b;
+            --status-success: #10b981;
+            --status-error: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 20% 20%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 80% 80%, rgba(168, 85, 247, 0.12) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem 1.5rem;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1100px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.75rem;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .brand-logo {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+        .brand-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .connection-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.04);
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            border: 1px solid var(--card-border);
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background-color: var(--status-idle);
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .status-dot.online {
+            background-color: var(--status-success);
+            box-shadow: 0 0 10px var(--status-success);
+        }
+
+        .status-dot.offline {
+            background-color: var(--status-error);
+            box-shadow: 0 0 10px var(--status-error);
+        }
+
+        /* Glassmorphism Cards */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Status Card */
+        .status-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .status-badge {
+            padding: 0.35rem 0.8rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .status-badge.idle { background: rgba(107, 114, 128, 0.2); color: #d1d5db; }
+        .status-badge.processing { background: rgba(245, 158, 11, 0.2); color: #fbbf24; animation: pulse 1.5s infinite; }
+        .status-badge.success { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .status-badge.error { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .status-message {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .timestamp {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Dashboard Grid */
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .grid-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Preview Container */
+        .preview-container {
+            width: 100%;
+            min-height: 250px;
+            max-height: 380px;
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 12px;
+            border: 1px dashed var(--card-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .preview-container img {
+            max-width: 100%;
+            max-height: 380px;
+            object-fit: contain;
+            border-radius: 8px;
+            display: none;
+            transition: transform 0.3s ease;
+        }
+
+        .preview-container img:hover {
+            transform: scale(1.02);
+        }
+
+        .placeholder-text {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        /* Direct Answer Display */
+        .answer-box {
+            width: 100%;
+            min-height: 250px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .answer-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #60a5fa;
+            white-space: pre-wrap;
+            word-break: break-word;
+            display: none;
+        }
+
+        .copy-btn {
+            align-self: flex-end;
+            margin-top: 1rem;
+            background: var(--accent-gradient);
+            color: #fff;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            gap: 0.4rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .copy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px var(--accent-glow);
+        }
+
+        .copy-btn:active {
+            transform: translateY(0);
+        }
+
+        /* History Section */
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 250px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .history-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .history-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .history-content {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-main);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .history-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Dashboard Header -->
+        <header>
+            <div class="brand">
+                <div class="brand-logo">⚡</div>
+                <div>
+                    <h1 class="brand-title">Textline AI</h1>
+                    <p class="brand-subtitle">Clipboard Screenshot to Gemini AI Automation</p>
+                </div>
+            </div>
+            <div class="connection-indicator">
+                <div id="connection-dot" class="status-dot"></div>
+                <span id="connection-text">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Live Status Section -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📡 Real-Time Monitor Status</span>
+                <span id="timestamp" class="timestamp">--:--:--</span>
+            </div>
+            <div class="status-box">
+                <div class="status-info">
+                    <span id="status-badge" class="status-badge idle">IDLE</span>
+                    <span id="status-message" class="status-message">Initializing background listener...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="grid-layout">
+            <!-- Screenshot Preview Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🖼️ Captured Screenshot</span>
+                </div>
+                <div class="preview-container">
+                    <div id="empty-preview" class="placeholder-text">
+                        No screenshot detected yet.<br>Press <b>Win + Shift + S</b> or <b>PrtScn</b> to capture!
+                    </div>
+                    <img id="preview-image" src="" alt="Clipboard Screenshot Preview">
+                </div>
+            </div>
+
+            <!-- AI Direct Answer Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🤖 Gemini AI Direct Answer</span>
+                </div>
+                <div class="answer-box">
+                    <div id="empty-answer" class="placeholder-text">
+                        Answers will appear here and automatically copy to your system clipboard.
+                    </div>
+                    <pre id="answer-text" class="answer-text"></pre>
+                    <button id="copy-btn" class="copy-btn" onclick="copyAnswerToClipboard()">
+                        📋 Copy Answer
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity Log Card -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">📜 Session History</span>
+            </div>
+            <div id="history-list" class="history-list">
+                <div class="placeholder-text" id="empty-history" style="text-align: left; padding: 0.5rem 0;">
+                    No processed screenshots in this session.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.IO CDN -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+
+        // UI DOM Elements
+        const connectionDot = document.getElementById('connection-dot');
+        const connectionText = document.getElementById('connection-text');
+        const statusBadge = document.getElementById('status-badge');
+        const statusMessage = document.getElementById('status-message');
+        const timestampEl = document.getElementById('timestamp');
+        
+        const previewImage = document.getElementById('preview-image');
+        const emptyPreview = document.getElementById('empty-preview');
+        
+        const answerText = document.getElementById('answer-text');
+        const emptyAnswer = document.getElementById('empty-answer');
+        const copyBtn = document.getElementById('copy-btn');
+        
+        const historyList = document.getElementById('history-list');
+        const emptyHistory = document.getElementById('empty-history');
+
+        // Socket Connection Handlers
+        socket.on('connect', () => {
+            connectionDot.className = 'status-dot online';
+            connectionText.textContent = 'Live Connected';
+        });
+
+        socket.on('disconnect', () => {
+            connectionDot.className = 'status-dot offline';
+            connectionText.textContent = 'Disconnected';
+        });
+
+        // Handle Status Updates
+        socket.on('status_update', (data) => {
+            const statusKey = data.status || 'idle';
+            statusBadge.textContent = statusKey.toUpperCase();
+            statusBadge.className = `status-badge ${statusKey}`;
+            
+            statusMessage.textContent = data.message || '';
+            if (data.timestamp) {
+                timestampEl.textContent = data.timestamp;
+            }
+
+            if (statusKey === 'success' && data.answer) {
+                // Display Answer
+                answerText.textContent = data.answer;
+                answerText.style.display = 'block';
+                emptyAnswer.style.display = 'none';
+                copyBtn.style.display = 'inline-flex';
+
+                // Add to Session History
+                addHistoryItem(data.timestamp || new Date().toLocaleTimeString(), data.answer);
+            }
+        });
+
+        // Handle Image Preview Emit
+        socket.on('image_preview', (data) => {
+            if (data.image_url) {
+                previewImage.src = data.image_url;
+                previewImage.style.display = 'block';
+                emptyPreview.style.display = 'none';
+            }
+        });
+
+        // Copy button handler
+        function copyAnswerToClipboard() {
+            const text = answerText.textContent;
+            if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '✅ Copied!';
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalText;
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                });
+            }
+        }
+
+        // Append to history list
+        function addHistoryItem(timeStr, answerStr) {
+            if (emptyHistory) {
+                emptyHistory.style.display = 'none';
+            }
+
+            const item = document.createElement('div');
+            item.className = 'history-item';
+            
+            const content = document.createElement('div');
+            content.className = 'history-content';
+            content.textContent = answerStr;
+
+            const time = document.createElement('div');
+            time.className = 'history-time';
+            time.textContent = timeStr;
+
+            item.appendChild(content);
+            item.appendChild(time);
+
+            historyList.insertBefore(item, historyList.firstChild);
+        }
+    </script>
+</body>
+</html>
