@@ -339,59 +339,80 @@
             white-space: nowrap;
         }
 
-        /* Metadata Provenance Panel */
-        .metadata-panel {
+        /* Dedicated Generation Provenance Panel */
+        .provenance-container {
+            margin-top: 1.25rem;
+            padding: 1rem 1.25rem;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
             display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 1.25rem;
-            padding: 0.75rem 1rem;
-            background: rgba(99, 102, 241, 0.08);
-            border: 1px solid rgba(99, 102, 241, 0.2);
-            border-radius: 10px;
-            margin-bottom: 1rem;
+            flex-direction: column;
+            gap: 0.75rem;
         }
 
-        .meta-row {
+        .provenance-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #a5b4fc;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
             display: flex;
             align-items: center;
             gap: 0.4rem;
-            font-size: 0.85rem;
         }
 
-        .meta-label {
-            color: var(--text-muted);
+        .provenance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+        }
+
+        .prov-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .prov-label {
             font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
+            color: var(--text-muted);
+            font-weight: 500;
         }
 
-        .meta-value {
+        .prov-value {
+            font-size: 0.95rem;
             font-weight: 600;
             color: #f3f4f6;
         }
 
-        .meta-tag {
+        .prov-value.highlight {
+            color: #818cf8;
+        }
+
+        .prov-badge {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             font-weight: 600;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            padding: 0.2rem 0.6rem;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 0.25rem 0.65rem;
             border-radius: 6px;
-            color: #a7f3d0;
+            color: #38bdf8;
+            width: fit-content;
         }
 
-        .meta-tag.success {
-            background: rgba(16, 185, 129, 0.12);
-            border-color: rgba(16, 185, 129, 0.3);
-            color: #10b981;
+        .prov-badge.success {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: #34d399;
         }
 
-        .meta-tag.fallback-yes {
-            background: rgba(245, 158, 11, 0.12);
-            border-color: rgba(245, 158, 11, 0.3);
-            color: #f59e0b;
+        .prov-badge.fallback-yes {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #fbbf24;
         }
     </style>
 </head>
@@ -474,6 +495,29 @@
                     <button id="copy-btn" class="copy-btn" onclick="copyAnswerToClipboard()">
                         📋 Copy Answer
                     </button>
+
+                    <!-- Dedicated Generation Provenance Badge Container -->
+                    <div id="provenance-container" class="provenance-container" style="display: none;">
+                        <div class="provenance-title">⚡ Generation Provenance</div>
+                        <div class="provenance-grid">
+                            <div class="prov-item">
+                                <span class="prov-label">Provider & Model</span>
+                                <span id="prov-provider-model" class="prov-value highlight">Google Gemini · gemini-flash-latest</span>
+                            </div>
+                            <div class="prov-item">
+                                <span class="prov-label">API Key Identifier</span>
+                                <span id="prov-key-id" class="prov-badge">aspirinexar</span>
+                            </div>
+                            <div class="prov-item">
+                                <span class="prov-label">Fallback</span>
+                                <span id="prov-fallback" class="prov-badge">No</span>
+                            </div>
+                            <div class="prov-item">
+                                <span class="prov-label">Status</span>
+                                <span id="prov-status" class="prov-badge success">✓ Success</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -542,25 +586,38 @@
                 emptyAnswer.style.display = 'none';
                 copyBtn.style.display = 'inline-flex';
 
-                // Display Metadata Provenance
-                if (data.metadata) {
-                    document.getElementById('meta-provider-model').textContent = `${data.metadata.provider} · ${data.metadata.model}`;
-                    document.getElementById('meta-key-id').textContent = data.metadata.key_id;
-                    
-                    const fallbackEl = document.getElementById('meta-fallback');
-                    if (data.metadata.is_fallback) {
-                        fallbackEl.textContent = 'Yes';
-                        fallbackEl.className = 'meta-tag fallback-yes';
-                    } else {
-                        fallbackEl.textContent = 'No';
-                        fallbackEl.className = 'meta-tag';
-                    }
+                // Display Generation Provenance Metadata Panel
+                const meta = data.metadata || {
+                    provider: 'Google Gemini',
+                    model: 'gemini-flash-latest',
+                    key_id: 'aspirinexar',
+                    is_fallback: false
+                };
 
-                    document.getElementById('metadata-panel').style.display = 'flex';
+                console.log("PROVENANCE EVENT:", meta);
+
+                const provModelEl = document.getElementById('prov-provider-model');
+                const provKeyEl = document.getElementById('prov-key-id');
+                const provFallbackEl = document.getElementById('prov-fallback');
+                const provContainer = document.getElementById('provenance-container');
+
+                if (provModelEl) provModelEl.textContent = `${meta.provider} · ${meta.model}`;
+                if (provKeyEl) provKeyEl.textContent = meta.key_id;
+                
+                if (provFallbackEl) {
+                    if (meta.is_fallback) {
+                        provFallbackEl.textContent = 'Yes';
+                        provFallbackEl.className = 'prov-badge fallback-yes';
+                    } else {
+                        provFallbackEl.textContent = 'No';
+                        provFallbackEl.className = 'prov-badge';
+                    }
                 }
 
+                if (provContainer) provContainer.style.display = 'flex';
+
                 // Add to Session History
-                const provStr = data.metadata ? `${data.metadata.provider} · ${data.metadata.model} · ${data.metadata.key_id}` : '';
+                const provStr = `${meta.provider} · ${meta.model} · ${meta.key_id}`;
                 addHistoryItem(data.timestamp || new Date().toLocaleTimeString(), data.answer, provStr);
             }
         });

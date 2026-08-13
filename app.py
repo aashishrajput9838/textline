@@ -40,7 +40,7 @@ else:
 # Initialize Flask App & SocketIO
 app = Flask(__name__, template_folder=template_dir)
 app.config['SECRET_KEY'] = 'clipboard_gemini_secret_key'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", ping_timeout=60, ping_interval=25)
 
 # Structured mapping of custom key IDs / aliases to actual Gemini API keys
 API_KEYS_MAP = {
