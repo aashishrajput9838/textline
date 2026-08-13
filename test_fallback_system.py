@@ -18,7 +18,7 @@ class TestFallbackSystem(unittest.TestCase):
         1. All expected key IDs are recognized in exact sequential order:
         98381 -> 98382 -> 98383 -> 98385 -> 98386 -> 98387 -> 98388 -> 98389 -> 983810
         """
-        expected_keys = ["98381", "98382", "98383", "98385", "98386", "98387", "98388", "98389", "983810"]
+        expected_keys = ["98381", "98382", "98383", "98385", "98386", "98387", "98388", "98389", "983810", "aspirinexar"]
         actual_keys = list(API_KEYS_MAP.keys())
 
         # Assert exact list match and order

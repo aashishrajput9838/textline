@@ -53,13 +53,14 @@ API_KEYS_MAP = {
     "98388": os.environ.get("GEMINI_API_KEY_98388"),
     "98389": os.environ.get("GEMINI_API_KEY_98389"),
     "983810": os.environ.get("GEMINI_API_KEY_983810"),
+    "aspirinexar": os.environ.get("GEMINI_API_KEY_aspirinexar"),
 }
 
 # OpenAI Backup Provider Configuration
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
 
 # Default active Gemini models list for google-genai SDK
-DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-latest"]
+DEFAULT_GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-latest"]
 
 def get_available_gemini_models(client):
     """Dynamically discover active generateContent models for a given client key."""
