@@ -65,7 +65,7 @@ DEFAULT_GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-
 def get_available_gemini_models(client):
     """Dynamically discover active generateContent models for a given client key."""
     try:
-        discovered = []
+        discovered = ["gemini-flash-latest"]
         for m in client.models.list():
             m_name = getattr(m, 'name', '') or str(m)
             if 'gemini' in m_name.lower():
