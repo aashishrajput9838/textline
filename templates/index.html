@@ -414,6 +414,127 @@
             border-color: rgba(245, 158, 11, 0.4);
             color: #fbbf24;
         }
+
+        /* API Key Health Monitor Styles */
+        .test-keys-btn {
+            background: var(--accent-gradient);
+            color: #fff;
+            border: none;
+            padding: 0.45rem 0.9rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            box-shadow: 0 4px 12px var(--accent-glow);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .test-keys-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px var(--accent-glow);
+        }
+
+        .test-keys-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .key-health-table-wrapper {
+            overflow-x: auto;
+            margin-top: 0.5rem;
+        }
+
+        .key-health-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        .key-health-table th {
+            padding: 0.6rem 0.8rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .key-health-table td {
+            padding: 0.65rem 0.8rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .key-id-cell {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: #818cf8;
+        }
+
+        .badge-status {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.25rem 0.55rem;
+            border-radius: 6px;
+            display: inline-block;
+            text-transform: uppercase;
+        }
+
+        .badge-status.working {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .badge-status.quota {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .badge-status.unauthorized {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .badge-status.billing {
+            background: rgba(168, 85, 247, 0.15);
+            color: #c084fc;
+            border: 1px solid rgba(168, 85, 247, 0.4);
+        }
+
+        .badge-status.failed, .badge-status.error {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .key-health-loading {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 0;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -443,6 +564,40 @@
                 <div class="status-info">
                     <span id="status-badge" class="status-badge idle">IDLE</span>
                     <span id="status-message" class="status-message">Initializing background listener...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Key Health Monitor Card -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">🔑 API Key Health Monitor</span>
+                <button id="test-all-keys-btn" class="test-keys-btn" onclick="runKeyHealthCheck()">
+                    🧪 Test All API Keys
+                </button>
+            </div>
+            <div class="key-health-container">
+                <div id="key-health-placeholder" class="placeholder-text" style="text-align: left; padding: 0.5rem 0;">
+                    Click <b>"🧪 Test All API Keys"</b> to run an independent diagnostic scan across all configured credentials.
+                </div>
+                <div id="key-health-loading" class="key-health-loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <span id="key-health-status-text">Scanning configured API keys...</span>
+                </div>
+                <div id="key-health-table-wrapper" class="key-health-table-wrapper" style="display: none;">
+                    <table class="key-health-table">
+                        <thead>
+                            <tr>
+                                <th>Key ID</th>
+                                <th>Model</th>
+                                <th>Status</th>
+                                <th>Latency</th>
+                                <th>HTTP / Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="key-health-tbody">
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -684,6 +839,67 @@
             item.appendChild(timeEl);
 
             historyList.insertBefore(item, historyList.firstChild);
+        }
+
+        // Run Key Health Check
+        function runKeyHealthCheck() {
+            const btn = document.getElementById('test-all-keys-btn');
+            const placeholder = document.getElementById('key-health-placeholder');
+            const loading = document.getElementById('key-health-loading');
+            const wrapper = document.getElementById('key-health-table-wrapper');
+
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> Testing...';
+            
+            if (placeholder) placeholder.style.display = 'none';
+            loading.style.display = 'flex';
+            wrapper.style.display = 'none';
+
+            // Trigger diagnostic scan via WebSocket
+            socket.emit('run_key_health_check');
+        }
+
+        socket.on('key_health_progress', (data) => {
+            const statusText = document.getElementById('key-health-status-text');
+            if (statusText && data.message) {
+                statusText.textContent = data.message;
+            }
+        });
+
+        socket.on('key_health_results', (data) => {
+            const btn = document.getElementById('test-all-keys-btn');
+            const loading = document.getElementById('key-health-loading');
+            const wrapper = document.getElementById('key-health-table-wrapper');
+            const tbody = document.getElementById('key-health-tbody');
+
+            btn.disabled = false;
+            btn.innerHTML = '🧪 Test All API Keys';
+            loading.style.display = 'none';
+            wrapper.style.display = 'block';
+
+            tbody.innerHTML = '';
+            
+            if (data.results && data.results.length > 0) {
+                data.results.forEach(item => {
+                    const tr = document.createElement('tr');
+                    
+                    const statusClass = (item.status || 'error').toLowerCase();
+                    
+                    tr.innerHTML = `
+                        <td class="key-id-cell">${escapeHtml(item.key_id)}</td>
+                        <td>${escapeHtml(item.model)}</td>
+                        <td><span class="badge-status ${statusClass}">${escapeHtml(item.status)}</span></td>
+                        <td>${item.latency_ms}ms</td>
+                        <td>${escapeHtml(item.details)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        });
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
     </script>
 </body>

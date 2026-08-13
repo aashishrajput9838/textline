@@ -187,5 +187,71 @@ class TestFallbackSystem(unittest.TestCase):
 
         print("[PASS] Test 6: Missing environment variables handled safely and no credential leakage!")
 
+    @patch("app.genai.Client")
+    def test_7_key_health_check_diagnostics(self, mock_genai_client):
+        """
+        7. Test Per-Key Independent Health Diagnostics:
+        - Discover keys from .env/API_KEYS_MAP.
+        - Run independent test per key measuring latency and classification.
+        - Verify raw credential secrets are NEVER exposed.
+        """
+        from app import test_single_key_diagnostic, run_all_keys_health_check, discover_all_gemini_keys
+        
+        mock_working_client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.text = "Hi"
+        mock_working_client.models.generate_content.return_value = mock_resp
+
+        mock_quota_client = MagicMock()
+        mock_quota_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED")
+
+        mock_unauth_client = MagicMock()
+        mock_unauth_client.models.generate_content.side_effect = Exception("403 PERMISSION_DENIED")
+
+        def client_factory(api_key):
+            if api_key == "secret_key_working":
+                return mock_working_client
+            elif api_key == "secret_key_quota":
+                return mock_quota_client
+            return mock_unauth_client
+
+        mock_genai_client.side_effect = client_factory
+
+        test_env_keys = {
+            "98381": "secret_key_working",
+            "98382": "secret_key_quota",
+            "aspirinexar": "secret_key_unauth"
+        }
+
+        with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
+            discovered = discover_all_gemini_keys()
+            self.assertIn("98381", discovered)
+            self.assertIn("98382", discovered)
+            self.assertIn("aspirinexar", discovered)
+
+            results = run_all_keys_health_check()
+            self.assertTrue(len(results) >= 3)
+
+            # Key 98381 -> Working
+            res_1 = next(r for r in results if r["key_id"] == "98381")
+            self.assertEqual(res_1["status"], "Working")
+            self.assertEqual(res_1["http_code"], 200)
+
+            # Key 98382 -> Quota
+            res_2 = next(r for r in results if r["key_id"] == "98382")
+            self.assertEqual(res_2["status"], "Quota")
+            self.assertEqual(res_2["http_code"], 429)
+
+            # Key aspirinexar -> Unauthorized
+            res_3 = next(r for r in results if r["key_id"] == "aspirinexar")
+            self.assertEqual(res_3["status"], "Unauthorized")
+            self.assertEqual(res_3["http_code"], 403)
+
+            # Check secrecy: No raw secret strings in details or results!
+            for r in results:
+                self.assertNotIn("secret_key", str(r))
+
+        print("[PASS] Test 7: Independent per-key diagnostics & security secrecy verified!")
+
 if __name__ == '__main__':
     unittest.main()

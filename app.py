@@ -13,7 +13,7 @@ try:
     import openai
 except ImportError:
     openai = None
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify
 from flask_socketio import SocketIO, emit
 
 # PyInstaller creates a temp folder and stores path in _MEIPASS
@@ -278,10 +278,127 @@ def monitor_clipboard():
 
         time.sleep(1)
 
+def discover_all_gemini_keys():
+    """Dynamically discovers all GEMINI_API_KEY_* environment variables from .env and API_KEYS_MAP."""
+    discovered_keys = {}
+    
+    # 1. First add all structured keys from API_KEYS_MAP
+    for k_id, k_val in API_KEYS_MAP.items():
+        if k_val and k_val.strip() and k_val != "YOUR_GEMINI_API_KEY":
+            discovered_keys[k_id] = k_val
+
+    # 2. Check os.environ for any additional GEMINI_API_KEY_* variables
+    for env_var, env_val in os.environ.items():
+        if env_var.startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
+            key_id = env_var.replace("GEMINI_API_KEY_", "")
+            if key_id not in discovered_keys:
+                discovered_keys[key_id] = env_val
+
+    return discovered_keys
+
+def test_single_key_diagnostic(key_id, api_key):
+    """Tests a single Gemini API key independently against gemini-flash-latest and measures latency."""
+    if not api_key or not api_key.strip() or api_key == "YOUR_GEMINI_API_KEY":
+        return {
+            "key_id": key_id,
+            "model": "gemini-flash-latest",
+            "status": "Error",
+            "latency_ms": 0,
+            "http_code": 400,
+            "details": "Not Configured in .env"
+        }
+
+    start_time = time.time()
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents="Hi"
+        )
+        latency = int((time.time() - start_time) * 1000)
+        
+        if response and response.text:
+            return {
+                "key_id": key_id,
+                "model": "gemini-flash-latest",
+                "status": "Working",
+                "latency_ms": latency,
+                "http_code": 200,
+                "details": "PASS"
+            }
+        else:
+            return {
+                "key_id": key_id,
+                "model": "gemini-flash-latest",
+                "status": "Failed",
+                "latency_ms": latency,
+                "http_code": 200,
+                "details": "Empty Response"
+            }
+
+    except Exception as e:
+        latency = int((time.time() - start_time) * 1000)
+        err_str = str(e)
+        
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+            status = "Quota"
+            code = 429
+            details = "429 Quota Exhausted"
+        elif "403" in err_str or "PERMISSION_DENIED" in err_str:
+            status = "Unauthorized"
+            code = 403
+            details = "403 Access Restricted / Denied"
+        elif "404" in err_str or "NOT_FOUND" in err_str:
+            status = "Error"
+            code = 404
+            details = "404 Model Unavailable"
+        elif "BILLING" in err_str.upper():
+            status = "Billing"
+            code = 402
+            details = "Billing Required"
+        elif "400" in err_str or "INVALID_ARGUMENT" in err_str:
+            status = "Failed"
+            code = 400
+            details = "400 Invalid Argument / Key"
+        else:
+            status = "Error"
+            code = 500
+            details = err_str.split("\n")[0][:60]
+
+        return {
+            "key_id": key_id,
+            "model": "gemini-flash-latest",
+            "status": status,
+            "latency_ms": latency,
+            "http_code": code,
+            "details": details
+        }
+
+def run_all_keys_health_check():
+    """Runs independent diagnostic scan across every discovered Gemini API key."""
+    all_keys = discover_all_gemini_keys()
+    results = []
+    
+    for key_id, api_key in all_keys.items():
+        res = test_single_key_diagnostic(key_id, api_key)
+        results.append(res)
+        
+    return results
+
 @app.route('/')
 def index():
     """Render the main single-page dashboard."""
     return render_template('index.html')
+
+@app.route('/api/test-keys')
+def api_test_keys():
+    """REST Endpoint to trigger independent diagnostic scan for all API keys."""
+    results = run_all_keys_health_check()
+    return jsonify({
+        'status': 'success',
+        'count': len(results),
+        'results': results
+    })
 
 @socketio.on('connect')
 def handle_connect():
@@ -289,6 +406,18 @@ def handle_connect():
     emit('status_update', {
         'status': 'idle',
         'message': 'Connected to server. Monitoring clipboard for screenshots...',
+        'timestamp': time.strftime("%H:%M:%S")
+    })
+
+@socketio.on('run_key_health_check')
+def handle_run_key_health_check():
+    """WebSocket event handler to run key diagnostic scan asynchronously."""
+    emit('key_health_progress', {'status': 'scanning', 'message': 'Running diagnostic scan across all configured API keys...'})
+    results = run_all_keys_health_check()
+    emit('key_health_results', {
+        'status': 'success',
+        'count': len(results),
+        'results': results,
         'timestamp': time.strftime("%H:%M:%S")
     })
 
