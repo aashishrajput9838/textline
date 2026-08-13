@@ -115,11 +115,13 @@ def generate_content_openai_fallback(prompt, base64_image_url):
 
 def generate_content_with_fallback(contents, base64_image_url=None):
     """
-    Executes content generation using structured Gemini key IDs (98381 -> 983810).
+    Executes content generation using structured Gemini key IDs (98381 -> 983810, aspirinexar).
     Fail-Fast: Skips invalid/dummy/unauthorized keys immediately on first error.
     If ALL Gemini keys fail, gracefully attempts OpenAI (gpt-4o-mini).
+    Returns tuple: (raw_answer_text, metadata_dict).
     """
     errors = []
+    attempt_count = 0
 
     valid_keys = {key_id: key_val for key_id, key_val in API_KEYS_MAP.items() if key_val and key_val != "YOUR_GEMINI_API_KEY"}
     
@@ -140,6 +142,7 @@ def generate_content_with_fallback(contents, base64_image_url=None):
         models_to_query = get_available_gemini_models(client)
         
         for model_name in models_to_query:
+            attempt_count += 1
             try:
                 print(f"[*] Trying Gemini Key ID [{key_id}] with model '{model_name}'...")
                 response = client.models.generate_content(
@@ -148,7 +151,13 @@ def generate_content_with_fallback(contents, base64_image_url=None):
                 )
                 if response and response.text:
                     print(f"[+] Success using Gemini Key ID [{key_id}] ({model_name})")
-                    return response.text
+                    meta = {
+                        "provider": "Google Gemini",
+                        "model": model_name,
+                        "key_id": key_id,
+                        "is_fallback": attempt_count > 1
+                    }
+                    return response.text, meta
             except Exception as e:
                 err_str = str(e)
                 short_err = err_str.split("\n")[0] if "\n" in err_str else err_str
@@ -169,11 +178,18 @@ def generate_content_with_fallback(contents, base64_image_url=None):
 
     # 2. Graceful Fallback to OpenAI gpt-4o-mini if configured
     if base64_image_url:
+        attempt_count += 1
         prompt_str = contents[0] if isinstance(contents, list) and len(contents) > 0 else str(contents)
         openai_result = generate_content_openai_fallback(prompt_str, base64_image_url)
         if openai_result:
             print("[+] Success using OpenAI (gpt-4o-mini) fallback!")
-            return openai_result
+            meta = {
+                "provider": "OpenAI",
+                "model": "gpt-4o-mini",
+                "key_id": "OPENAI",
+                "is_fallback": True
+            }
+            return openai_result, meta
 
     raise RuntimeError("All Gemini API keys & OpenAI fallbacks failed. Please check your .env configuration!\n\nDetails:\n" + "\n".join(errors))
 
@@ -227,17 +243,26 @@ def monitor_clipboard():
                     prompt = "give me complete code in the given language,\nmake sure -\n1. my code should be very fast in terms of speed.\n2. remove any spaces from the starting of each line in the code.\n\nMost important -- I don't need any explanation or any other content, not even a single irrelevant word. The output should be only the code."
                     
                     try:
-                        raw_answer = generate_content_with_fallback([prompt, clipboard_content], base64_image_url=image_data_url)
+                        raw_answer, meta = generate_content_with_fallback([prompt, clipboard_content], base64_image_url=image_data_url)
                         final_clipboard_text = format_clipboard_output(raw_answer)
                         
                         # Auto-copy final formatted text to Windows clipboard
                         pyperclip.copy(final_clipboard_text)
 
-                        # 5. Emit final answer and Done status to frontend
+                        # 5. Emit final answer and Done status to frontend with metadata provenance
                         socketio.emit('status_update', {
                             'status': 'success',
                             'message': 'Done! Answer copied to clipboard.',
                             'answer': final_clipboard_text,
+                            'timestamp': time.strftime("%H:%M:%S"),
+                            'metadata': meta
+                        })
+                    except Exception as api_err:
+                        error_msg = f"AI Generation Error: {str(api_err)}"
+                        print(f"[!] {error_msg}")
+                        socketio.emit('status_update', {
+                            'status': 'error',
+                            'message': error_msg,
                             'timestamp': time.strftime("%H:%M:%S")
                         })
                     except Exception as api_err:

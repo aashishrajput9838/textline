@@ -16,7 +16,7 @@ class TestFallbackSystem(unittest.TestCase):
     def test_1_all_expected_key_ids_recognized_and_ordered(self):
         """
         1. All expected key IDs are recognized in exact sequential order:
-        98381 -> 98382 -> 98383 -> 98385 -> 98386 -> 98387 -> 98388 -> 98389 -> 983810
+        98381 -> 98382 -> 98383 -> 98385 -> 98386 -> 98387 -> 98388 -> 98389 -> 983810 -> aspirinexar
         """
         expected_keys = ["98381", "98382", "98383", "98385", "98386", "98387", "98388", "98389", "983810", "aspirinexar"]
         actual_keys = list(API_KEYS_MAP.keys())
@@ -55,9 +55,9 @@ class TestFallbackSystem(unittest.TestCase):
     @patch("app.genai.Client")
     def test_3_fail_fast_on_400_403_404_rotation(self, mock_genai_client):
         """
-        3. Test Fail-Fast on 400/403/404 Errors:
+        3. Test Fail-Fast on 400/403/404 Errors with Metadata Provenance:
         Simulate Key 1 returning a 404 NOT_FOUND error.
-        Assert system instantly rotates to Key 2 without retrying dead models on Key 1.
+        Assert system instantly rotates to Key 2 and returns metadata provenance.
         """
         mock_client_key1 = MagicMock()
         mock_client_key1.models.generate_content.side_effect = Exception("404 NOT_FOUND: Model no longer available")
@@ -81,18 +81,23 @@ class TestFallbackSystem(unittest.TestCase):
         mock_genai_client.side_effect = client_factory
 
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
-            result = generate_content_with_fallback(["test_prompt"])
+            result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "def solution_key2(): pass")
             self.assertEqual(mock_client_key1.models.generate_content.call_count, 1)
+            
+            # Metadata Provenance Assertions
+            self.assertEqual(meta["provider"], "Google Gemini")
+            self.assertEqual(meta["key_id"], "98382")
+            self.assertTrue(meta["is_fallback"])
 
-        print("[PASS] Test 3: Instant fail-fast rotation on 400/403/404 verified!")
+        print("[PASS] Test 3: Instant fail-fast rotation on 400/403/404 with metadata provenance verified!")
 
     @patch("app.genai.Client")
     def test_4_rate_limit_429_rotation(self, mock_genai_client):
         """
         4. Test 429 Rate Limit Rotation:
         Simulate 429 RESOURCE_EXHAUSTED on Key 1.
-        Assert system rotates to Key 2 and succeeds.
+        Assert system rotates to Key 2 and succeeds with correct key provenance.
         """
         mock_client_key1 = MagicMock()
         mock_client_key1.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: Quota limit reached")
@@ -115,16 +120,18 @@ class TestFallbackSystem(unittest.TestCase):
         mock_genai_client.side_effect = client_factory
 
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
-            result = generate_content_with_fallback(["test_prompt"])
+            result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "def rotate_success(): pass")
+            self.assertEqual(meta["key_id"], "98382")
+            self.assertTrue(meta["is_fallback"])
 
-        print("[PASS] Test 4: 429 Quota Exhaustion key rotation verified!")
+        print("[PASS] Test 4: 429 Quota Exhaustion key rotation with metadata verified!")
 
     @patch("app.openai")
     @patch("app.genai.Client")
     def test_5_openai_fallback_only_after_gemini_exhaustion(self, mock_genai_client, mock_openai_module):
         """
-        5. Test OpenAI Fallback Execution:
+        5. Test OpenAI Fallback Execution with Metadata:
         OpenAI fallback occurs ONLY after all available Gemini keys have failed.
         """
         mock_failing_client = MagicMock()
@@ -143,10 +150,14 @@ class TestFallbackSystem(unittest.TestCase):
 
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             with patch("app.OPENAI_API_KEY", "sk-proj-valid-test-key"):
-                result = generate_content_with_fallback(["test_prompt"], base64_image_url="data:image/png;base64,12345")
+                result, meta = generate_content_with_fallback(["test_prompt"], base64_image_url="data:image/png;base64,12345")
                 self.assertEqual(result, "def openai_solution(): pass")
+                self.assertEqual(meta["provider"], "OpenAI")
+                self.assertEqual(meta["model"], "gpt-4o-mini")
+                self.assertEqual(meta["key_id"], "OPENAI")
+                self.assertTrue(meta["is_fallback"])
 
-        print("[PASS] Test 5: OpenAI fallback triggers only after Gemini keys are exhausted!")
+        print("[PASS] Test 5: OpenAI fallback triggers with metadata provenance!")
 
     @patch("app.genai.Client")
     def test_6_missing_env_vars_and_no_credential_leakage(self, mock_genai_client):
@@ -171,7 +182,6 @@ class TestFallbackSystem(unittest.TestCase):
                     generate_content_with_fallback(["test_prompt"])
                 
                 # Check exception string does NOT expose actual raw credential secret
-                # Exception details show key ID [98381], not the secret string itself!
                 err_msg = str(ctx.exception)
                 self.assertIn("Key [98381]", err_msg)
 
