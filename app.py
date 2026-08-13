@@ -42,19 +42,21 @@ app = Flask(__name__, template_folder=template_dir)
 app.config['SECRET_KEY'] = 'clipboard_gemini_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", ping_timeout=60, ping_interval=25)
 
-# Structured mapping of custom key IDs / aliases to actual Gemini API keys
-API_KEYS_MAP = {
-    "98381": os.environ.get("GEMINI_API_KEY_98381", os.environ.get("GEMINI_API_KEY")),
-    "98382": os.environ.get("GEMINI_API_KEY_98382"),
-    "98383": os.environ.get("GEMINI_API_KEY_98383"),
-    "98385": os.environ.get("GEMINI_API_KEY_98385"),
-    "98386": os.environ.get("GEMINI_API_KEY_98386"),
-    "98387": os.environ.get("GEMINI_API_KEY_98387"),
-    "98388": os.environ.get("GEMINI_API_KEY_98388"),
-    "98389": os.environ.get("GEMINI_API_KEY_98389"),
-    "983810": os.environ.get("GEMINI_API_KEY_983810"),
-    "aspirinexar": os.environ.get("GEMINI_API_KEY_aspirinexar"),
-}
+# Structured dynamic mapping of custom key IDs / aliases to actual Gemini API keys
+def load_api_keys_map():
+    keys_map = {}
+    default_key = os.environ.get("GEMINI_API_KEY")
+    if default_key and default_key.strip():
+        keys_map["default"] = default_key
+        
+    for env_var, env_val in os.environ.items():
+        if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
+            raw_key_id = env_var[15:]
+            if raw_key_id.lower() not in [k.lower() for k in keys_map]:
+                keys_map[raw_key_id] = env_val
+    return keys_map
+
+API_KEYS_MAP = load_api_keys_map()
 
 # OpenAI Backup Provider Configuration
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
