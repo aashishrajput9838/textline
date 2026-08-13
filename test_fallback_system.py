@@ -253,5 +253,44 @@ class TestFallbackSystem(unittest.TestCase):
 
         print("[PASS] Test 7: Independent per-key diagnostics & security secrecy verified!")
 
+    @patch("app.genai.Client")
+    def test_8_case_insensitive_key_deduplication(self, mock_genai_client):
+        """
+        8. Test Case-Insensitive Key Deduplication:
+        Simulate environment containing both GEMINI_API_KEY_aspirinexar and GEMINI_API_KEY_ASPIRINEXAR.
+        Assert that discover_all_gemini_keys and run_all_keys_health_check produce exactly ONE 'aspirinexar' entry.
+        """
+        from app import discover_all_gemini_keys, run_all_keys_health_check
+        
+        mock_client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.text = "OK"
+        mock_client.models.generate_content.return_value = mock_resp
+        mock_genai_client.return_value = mock_client
+
+        test_map = {
+            "aspirinexar": "secret_key_val"
+        }
+
+        test_env = {
+            "GEMINI_API_KEY_aspirinexar": "secret_key_val",
+            "GEMINI_API_KEY_ASPIRINEXAR": "secret_key_val"
+        }
+
+        with patch.dict("app.API_KEYS_MAP", test_map, clear=True):
+            with patch.dict("os.environ", test_env, clear=True):
+                discovered = discover_all_gemini_keys()
+                
+                # Check that only ONE aspirinexar key exists in discovered dict
+                aspirinexar_matches = [k for k in discovered.keys() if k.lower() == "aspirinexar"]
+                self.assertEqual(len(aspirinexar_matches), 1)
+                self.assertEqual(aspirinexar_matches[0], "aspirinexar")
+
+                results = run_all_keys_health_check()
+                aspirinexar_results = [r for r in results if r["key_id"].lower() == "aspirinexar"]
+                self.assertEqual(len(aspirinexar_results), 1)
+
+        print("[PASS] Test 8: Case-insensitive key deduplication verified!")
+
 if __name__ == '__main__':
     unittest.main()

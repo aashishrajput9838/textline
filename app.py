@@ -279,20 +279,28 @@ def monitor_clipboard():
         time.sleep(1)
 
 def discover_all_gemini_keys():
-    """Dynamically discovers all GEMINI_API_KEY_* environment variables from .env and API_KEYS_MAP."""
+    """Dynamically discovers all GEMINI_API_KEY_* environment variables from .env and API_KEYS_MAP,
+    deduplicating key identifiers case-insensitively while preserving canonical casing for the first seen key ID.
+    """
     discovered_keys = {}
+    seen_normalized = set()
     
     # 1. First add all structured keys from API_KEYS_MAP
     for k_id, k_val in API_KEYS_MAP.items():
         if k_val and k_val.strip() and k_val != "YOUR_GEMINI_API_KEY":
-            discovered_keys[k_id] = k_val
+            normalized_id = k_id.lower()
+            if normalized_id not in seen_normalized:
+                seen_normalized.add(normalized_id)
+                discovered_keys[k_id] = k_val
 
     # 2. Check os.environ for any additional GEMINI_API_KEY_* variables
     for env_var, env_val in os.environ.items():
-        if env_var.startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
-            key_id = env_var.replace("GEMINI_API_KEY_", "")
-            if key_id not in discovered_keys:
-                discovered_keys[key_id] = env_val
+        if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
+            raw_key_id = env_var[15:]
+            normalized_id = raw_key_id.lower()
+            if normalized_id not in seen_normalized:
+                seen_normalized.add(normalized_id)
+                discovered_keys[raw_key_id] = env_val
 
     return discovered_keys
 
