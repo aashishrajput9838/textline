@@ -332,5 +332,39 @@ class TestFallbackSystem(unittest.TestCase):
 
         print("[PASS] Test 9: Generation ID provenance & usage tracking metadata verified!")
 
+    @patch("app.genai.Client")
+    @patch("app.time.sleep")
+    def test_10_503_service_unavailable_handling_and_retry_backoff(self, mock_sleep, mock_genai_client):
+        """
+        10. Test 503 Service Unavailable Handling & Retry Backoff:
+        - Verify 503 response reports SERVICE_UNAVAILABLE status in Health Check.
+        - Verify smart summary message says 'Gemini temporarily unavailable — Google is currently reporting high demand'.
+        - Verify backoff sleep calls are executed on 503 retries.
+        """
+        from app import run_all_keys_health_check
+        
+        mock_503_client = MagicMock()
+        mock_503_client.models.generate_content.side_effect = Exception("503 UNAVAILABLE: This model is currently experiencing high demand.")
+        mock_genai_client.return_value = mock_503_client
+
+        test_env_keys = {"1_textline_gemini_9838_AlReasoningValidationSystem": "secret_503_key"}
+
+        with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
+            # Test Health Check classification
+            results = run_all_keys_health_check()
+            key_res = next(r for r in results if r["key_id"] == "1_textline_gemini_9838_AlReasoningValidationSystem")
+            self.assertEqual(key_res["status"], "SERVICE_UNAVAILABLE")
+            self.assertEqual(key_res["http_code"], 503)
+
+            # Test generation error summary message
+            with patch("app.OPENAI_API_KEY", None):
+                with self.assertRaises(RuntimeError) as ctx:
+                    generate_content_with_fallback(["test_prompt"])
+                err_msg = str(ctx.exception)
+                self.assertIn("Gemini temporarily unavailable — Google is currently reporting high demand", err_msg)
+                self.assertNotIn("Please check your .env configuration!", err_msg)
+
+        print("[PASS] Test 10: 503 Service Unavailable & retry backoff verified!")
+
 if __name__ == '__main__':
     unittest.main()

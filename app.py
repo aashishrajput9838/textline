@@ -69,17 +69,17 @@ API_KEYS_MAP = load_api_keys_map()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
 
 # Default active Gemini models list for google-genai SDK
-DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro"]
+DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
 
 def get_available_gemini_models(client):
     """Dynamically discover active generateContent models for a given client key."""
     try:
-        discovered = ["gemini-2.5-flash", "gemini-flash-latest"]
+        discovered = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
         for m in client.models.list():
             m_name = getattr(m, 'name', '') or str(m)
             if 'gemini' in m_name.lower():
                 clean_name = m_name.replace('models/', '')
-                if clean_name not in discovered and "1.5" not in clean_name:
+                if clean_name not in discovered and "1.5" not in clean_name and "2.5-pro" not in clean_name and "experimental" not in clean_name:
                     discovered.append(clean_name)
         if discovered:
             return discovered
@@ -161,43 +161,61 @@ def generate_content_with_fallback(contents, base64_image_url=None):
             continue
 
         models_to_query = get_available_gemini_models(client)
+        skip_key = False
         
         for model_name in models_to_query:
-            attempt_count += 1
-            try:
-                print(f"[*] Trying Gemini Key ID [{key_id}] with model '{model_name}'...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=contents
-                )
-                if response and response.text:
-                    print(f"[+] Success using Gemini Key ID [{key_id}] ({model_name})")
-                    meta = {
-                        "provider": "Google Gemini",
-                        "model": model_name,
-                        "key_id": key_id,
-                        "project_number": PROJECT_METADATA_MAP.get(key_id, {}).get("project_number", ""),
-                        "is_fallback": attempt_count > 1,
-                        "generation_id": f"gen_{int(time.time() * 1000)}"
-                    }
-                    return response.text, meta
-            except Exception as e:
-                err_str = str(e)
-                short_err = err_str.split("\n")[0] if "\n" in err_str else err_str
-                print(f"[!] Gemini Key ID [{key_id}] ({model_name}) failed: {short_err}")
-                errors.append(f"Key [{key_id}] [{model_name}]: {short_err}")
-                
-                # Fail-Fast: If key is invalid, unauthenticated, forbidden, or model not found/available, skip key immediately
-                if any(bad_kw in err_str for bad_kw in [
-                    "400", "403", "404", "INVALID_ARGUMENT", "PERMISSION_DENIED", 
-                    "NOT_FOUND", "API key not valid", "not available to new users"
-                ]):
-                    print(f"[!] Key ID [{key_id}] is invalid, restricted, or lacks model access. Skipping key...")
-                    break
-                
-                # If 429 quota exhausted on this model, try next model or next key
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                    print(f"[!] 429 Quota Limit reached for Key ID [{key_id}] on {model_name}. Trying next model/key...")
+            if skip_key:
+                break
+            if "2.5-pro" in model_name:
+                continue
+
+            max_retries = 2
+            for retry_idx in range(max_retries + 1):
+                attempt_count += 1
+                try:
+                    print(f"[*] Trying Gemini Key ID [{key_id}] with model '{model_name}' (Attempt {retry_idx + 1})...")
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=contents
+                    )
+                    if response and response.text:
+                        print(f"[+] Success using Gemini Key ID [{key_id}] ({model_name})")
+                        meta = {
+                            "provider": "Google Gemini",
+                            "model": model_name,
+                            "key_id": key_id,
+                            "project_number": PROJECT_METADATA_MAP.get(key_id, {}).get("project_number", ""),
+                            "is_fallback": attempt_count > 1,
+                            "generation_id": f"gen_{int(time.time() * 1000)}"
+                        }
+                        return response.text, meta
+                except Exception as e:
+                    err_str = str(e)
+                    short_err = err_str.split("\n")[0] if "\n" in err_str else err_str
+                    print(f"[!] Gemini Key ID [{key_id}] ({model_name}) failed: {short_err}")
+                    errors.append(f"Key [{key_id}] [{model_name}]: {short_err}")
+                    
+                    # 503 High Demand Spikes: Retry up to max_retries before moving to next model
+                    if any(kw in err_str for kw in ["503", "UNAVAILABLE", "high demand"]):
+                        if retry_idx < max_retries:
+                            wait_sec = 1.5 * (retry_idx + 1)
+                            print(f"[!] 503 High Demand spike for Key ID [{key_id}] ({model_name}). Retrying in {wait_sec}s...")
+                            time.sleep(wait_sec)
+                            continue
+
+                    # Fail-Fast: If key is invalid, unauthenticated, forbidden, or model not found/available, skip key immediately
+                    if any(bad_kw in err_str for bad_kw in [
+                        "400", "403", "404", "INVALID_ARGUMENT", "PERMISSION_DENIED", 
+                        "NOT_FOUND", "API key not valid", "not available to new users"
+                    ]):
+                        print(f"[!] Key ID [{key_id}] is invalid, restricted, or lacks model access. Skipping key...")
+                        skip_key = True
+                        break
+                    
+                    # If 429 quota exhausted on this model, try next model or next key
+                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        print(f"[!] 429 Quota Limit reached for Key ID [{key_id}] on {model_name}. Trying next model/key...")
+                        break
 
     # 2. Graceful Fallback to OpenAI gpt-4o-mini if configured
     if base64_image_url:
@@ -215,7 +233,18 @@ def generate_content_with_fallback(contents, base64_image_url=None):
             }
             return openai_result, meta
 
-    raise RuntimeError("All Gemini API keys & OpenAI fallbacks failed. Please check your .env configuration!\n\nDetails:\n" + "\n".join(errors))
+    # Construct smart, non-misleading error summary
+    all_err_text = " ".join(errors)
+    if "503" in all_err_text or "UNAVAILABLE" in all_err_text or "high demand" in all_err_text.lower():
+        summary_msg = "Gemini temporarily unavailable — Google is currently reporting high demand. Retrying..."
+    elif "429" in all_err_text or "RESOURCE_EXHAUSTED" in all_err_text:
+        summary_msg = "All Gemini API keys have reached daily quota limits (RESOURCE_EXHAUSTED). Please check back later or add another key."
+    elif "403" in all_err_text or "400" in all_err_text or "PERMISSION_DENIED" in all_err_text:
+        summary_msg = "Gemini API key authorization failed. Please check your .env configuration."
+    else:
+        summary_msg = "All Gemini API keys & fallbacks failed."
+
+    raise RuntimeError(f"AI Generation Error: {summary_msg}\n\nDetails:\n" + "\n".join(errors))
 
 def format_clipboard_output(raw_answer):
     """Enforces Python Post-Processing Padding (50 single-spaced lines + terminating dot)."""
@@ -396,6 +425,10 @@ def test_single_key_diagnostic(key_id, api_key):
                 status = "Error"
                 code = 404
                 details = "404 Model Unavailable"
+            elif "503" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str.lower():
+                status = "SERVICE_UNAVAILABLE"
+                code = 503
+                details = "503 High Demand / Service Unavailable"
             elif "BILLING" in err_str.upper() or "402" in err_str:
                 status = "Billing"
                 code = 402
