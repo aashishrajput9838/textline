@@ -54,6 +54,8 @@ def load_api_keys_map():
             raw_key_id = env_var[15:]
             if raw_key_id.lower() in ("1_textline_gemini_9838_alreasoningvalidationsystem", "textline_gemini_9838_alreasoningvalidationsystem"):
                 canonical_id = "1_textline_gemini_9838_AlReasoningValidationSystem"
+            elif raw_key_id.lower() in ("2_textline_gemini_9838_academicuniverseservice", "textline_gemini_9838_academicuniverseservice"):
+                canonical_id = "2_textline_gemini_9838_AcademicUniverseService"
             else:
                 canonical_id = raw_key_id
 
@@ -125,6 +127,10 @@ PROJECT_METADATA_MAP = {
     "1_textline_gemini_9838_AlReasoningValidationSystem": {
         "project_number": "333673007466",
         "project_name": "textline_gemini_9838_AlReasoningValidationSystem"
+    },
+    "2_textline_gemini_9838_AcademicUniverseService": {
+        "project_number": "500719954463",
+        "project_name": "textline_gemini_9838_AcademicUniverseService"
     }
 }
 
@@ -315,6 +321,8 @@ def discover_all_gemini_keys():
             raw_key_id = env_var[15:]
             if raw_key_id.lower() in ("1_textline_gemini_9838_alreasoningvalidationsystem", "textline_gemini_9838_alreasoningvalidationsystem"):
                 canonical_id = "1_textline_gemini_9838_AlReasoningValidationSystem"
+            elif raw_key_id.lower() in ("2_textline_gemini_9838_academicuniverseservice", "textline_gemini_9838_academicuniverseservice"):
+                canonical_id = "2_textline_gemini_9838_AcademicUniverseService"
             else:
                 canonical_id = raw_key_id
 
