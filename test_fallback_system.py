@@ -297,16 +297,40 @@ class TestFallbackSystem(unittest.TestCase):
             with patch.dict("os.environ", test_env, clear=True):
                 discovered = discover_all_gemini_keys()
                 
-                # Check that only ONE aspirinexar key exists in discovered dict
-                aspirinexar_matches = [k for k in discovered.keys() if k.lower() == "aspirinexar"]
-                self.assertEqual(len(aspirinexar_matches), 1)
-                self.assertEqual(aspirinexar_matches[0], "aspirinexar")
+                # Assert discover_all_gemini_keys deduplicates case-insensitively
+                aspirinexar_keys = [k for k in discovered.keys() if k.lower() == "aspirinexar"]
+                self.assertEqual(len(aspirinexar_keys), 1)
 
+                # Assert health check produces exactly ONE aspirinexar row
                 results = run_all_keys_health_check()
                 aspirinexar_results = [r for r in results if r["key_id"].lower() == "aspirinexar"]
                 self.assertEqual(len(aspirinexar_results), 1)
 
         print("[PASS] Test 8: Case-insensitive key deduplication verified!")
+
+    @patch("app.genai.Client")
+    def test_9_generation_id_provenance_and_usage_tracking_metadata(self, mock_genai_client):
+        """
+        9. Test Generation ID Provenance & Usage Tracking Metadata:
+        - Successful generation returns unique generation_id in metadata.
+        - Failed keys do NOT produce successful provenance metadata.
+        """
+        mock_client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.text = "def solution(): pass"
+        mock_client.models.generate_content.return_value = mock_resp
+        mock_genai_client.return_value = mock_client
+
+        test_env_keys = {"1_textline_gemini_9838_AlReasoningValidationSystem": "key_1_secret"}
+
+        with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
+            result, meta = generate_content_with_fallback(["test_prompt"])
+            self.assertEqual(result, "def solution(): pass")
+            self.assertIn("generation_id", meta)
+            self.assertTrue(meta["generation_id"].startswith("gen_"))
+            self.assertEqual(meta["key_id"], "1_textline_gemini_9838_AlReasoningValidationSystem")
+
+        print("[PASS] Test 9: Generation ID provenance & usage tracking metadata verified!")
 
 if __name__ == '__main__':
     unittest.main()

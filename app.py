@@ -177,7 +177,8 @@ def generate_content_with_fallback(contents, base64_image_url=None):
                         "model": model_name,
                         "key_id": key_id,
                         "project_number": PROJECT_METADATA_MAP.get(key_id, {}).get("project_number", ""),
-                        "is_fallback": attempt_count > 1
+                        "is_fallback": attempt_count > 1,
+                        "generation_id": f"gen_{int(time.time() * 1000)}"
                     }
                     return response.text, meta
             except Exception as e:
@@ -209,7 +210,8 @@ def generate_content_with_fallback(contents, base64_image_url=None):
                 "provider": "OpenAI",
                 "model": "gpt-4o-mini",
                 "key_id": "OPENAI",
-                "is_fallback": True
+                "is_fallback": True,
+                "generation_id": f"gen_{int(time.time() * 1000)}"
             }
             return openai_result, meta
 
