@@ -164,7 +164,23 @@
         .status-info {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+
+        .status-provenance-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #a5b4fc;
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            padding: 0.3rem 0.65rem;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            word-break: break-word;
+            line-height: 1.3;
         }
 
         .status-badge {
@@ -562,6 +578,7 @@
             </div>
             <div class="status-box">
                 <div class="status-info">
+                    <span id="status-provenance-tag" class="status-provenance-tag" style="display: none;"></span>
                     <span id="status-badge" class="status-badge idle">IDLE</span>
                     <span id="status-message" class="status-message">Initializing background listener...</span>
                 </div>
@@ -734,6 +751,8 @@
                 timestampEl.textContent = data.timestamp;
             }
 
+            const provTagEl = document.getElementById('status-provenance-tag');
+
             if (statusKey === 'success' && data.answer) {
                 // Display Answer
                 answerText.textContent = data.answer;
@@ -741,15 +760,20 @@
                 emptyAnswer.style.display = 'none';
                 copyBtn.style.display = 'inline-flex';
 
-                // Display Generation Provenance Metadata Panel
+                // Display Generation Provenance Metadata Panel & Status Tag
                 const meta = data.metadata || {
                     provider: 'Google Gemini',
                     model: 'gemini-flash-latest',
-                    key_id: 'aspirinexar',
+                    key_id: '1_textline_gemini_9838_AlReasoningValidationSystem',
                     is_fallback: false
                 };
 
                 console.log("PROVENANCE EVENT:", meta);
+
+                if (provTagEl) {
+                    provTagEl.textContent = `${meta.provider} · ${meta.model} · ${meta.key_id}`;
+                    provTagEl.style.display = 'inline-flex';
+                }
 
                 const provModelEl = document.getElementById('prov-provider-model');
                 const provKeyEl = document.getElementById('prov-key-id');
@@ -774,6 +798,8 @@
                 // Add to Session History
                 const provStr = `${meta.provider} · ${meta.model} · ${meta.key_id}`;
                 addHistoryItem(data.timestamp || new Date().toLocaleTimeString(), data.answer, provStr);
+            } else if (provTagEl && statusKey !== 'success') {
+                provTagEl.style.display = 'none';
             }
         });
 
