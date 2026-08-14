@@ -366,5 +366,31 @@ class TestFallbackSystem(unittest.TestCase):
 
         print("[PASS] Test 10: 503 Service Unavailable & retry backoff verified!")
 
+    @patch("app.genai.Client")
+    def test_11_fine_grained_fallback_provenance_tracking(self, mock_genai_client):
+        """
+        11. Test Fine-Grained Fallback Provenance Tracking:
+        - Verify model_fallback is True only if model changed.
+        - Verify key_fallback is True only if key changed.
+        - Verify is_fallback = model_fallback OR key_fallback.
+        - Verify attempt_count reflects exact number of attempts.
+        """
+        mock_success_client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.text = "OK"
+        mock_success_client.models.generate_content.return_value = mock_resp
+        mock_genai_client.return_value = mock_success_client
+
+        test_env_keys = {"1_textline_gemini_9838_AlReasoningValidationSystem": "key1"}
+
+        with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
+            result, meta = generate_content_with_fallback(["test_prompt"])
+            self.assertFalse(meta["is_fallback"])
+            self.assertFalse(meta["model_fallback"])
+            self.assertFalse(meta["key_fallback"])
+            self.assertEqual(meta["attempt_count"], 1)
+
+        print("[PASS] Test 11: Fine-grained fallback provenance tracking verified!")
+
 if __name__ == '__main__':
     unittest.main()

@@ -151,6 +151,11 @@ def generate_content_with_fallback(contents, base64_image_url=None):
         if gen_key:
             valid_keys["DEFAULT"] = gen_key
 
+    initial_key_id = None
+    initial_model = None
+    last_attempt_key_id = ""
+    last_attempt_model = ""
+
     # 1. Attempt Gemini multi-key rotation with dynamic model discovery
     for key_id, api_key in valid_keys.items():
         try:
@@ -169,6 +174,10 @@ def generate_content_with_fallback(contents, base64_image_url=None):
             if "2.5-pro" in model_name:
                 continue
 
+            if initial_key_id is None:
+                initial_key_id = key_id
+                initial_model = model_name
+
             max_retries = 2
             for retry_idx in range(max_retries + 1):
                 attempt_count += 1
@@ -180,16 +189,26 @@ def generate_content_with_fallback(contents, base64_image_url=None):
                     )
                     if response and response.text:
                         print(f"[+] Success using Gemini Key ID [{key_id}] ({model_name})")
+                        model_fallback = (model_name != initial_model)
+                        key_fallback = (key_id != initial_key_id)
+                        is_fallback = model_fallback or key_fallback
                         meta = {
                             "provider": "Google Gemini",
                             "model": model_name,
                             "key_id": key_id,
                             "project_number": PROJECT_METADATA_MAP.get(key_id, {}).get("project_number", ""),
-                            "is_fallback": attempt_count > 1,
+                            "is_fallback": is_fallback,
+                            "model_fallback": model_fallback,
+                            "key_fallback": key_fallback,
+                            "attempt_count": attempt_count,
+                            "previous_model": last_attempt_model,
+                            "previous_key_id": last_attempt_key_id,
                             "generation_id": f"gen_{int(time.time() * 1000)}"
                         }
                         return response.text, meta
                 except Exception as e:
+                    last_attempt_key_id = key_id
+                    last_attempt_model = model_name
                     err_str = str(e)
                     short_err = err_str.split("\n")[0] if "\n" in err_str else err_str
                     print(f"[!] Gemini Key ID [{key_id}] ({model_name}) failed: {short_err}")
@@ -229,6 +248,11 @@ def generate_content_with_fallback(contents, base64_image_url=None):
                 "model": "gpt-4o-mini",
                 "key_id": "OPENAI",
                 "is_fallback": True,
+                "model_fallback": True,
+                "key_fallback": True,
+                "attempt_count": attempt_count,
+                "previous_model": last_attempt_model,
+                "previous_key_id": last_attempt_key_id,
                 "generation_id": f"gen_{int(time.time() * 1000)}"
             }
             return openai_result, meta

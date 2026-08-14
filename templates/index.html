@@ -829,22 +829,33 @@
                     <button id="copy-btn" class="copy-btn" onclick="copyAnswerToClipboard()">
                         📋 Copy Answer
                     </button>
-
                     <!-- Dedicated Generation Provenance Badge Container -->
                     <div id="provenance-container" class="provenance-container" style="display: none;">
                         <div class="provenance-title">⚡ Generation Provenance</div>
                         <div class="provenance-grid">
                             <div class="prov-item">
                                 <span class="prov-label">Provider & Model</span>
-                                <span id="prov-provider-model" class="prov-value highlight">Google Gemini · gemini-flash-latest</span>
+                                <span id="prov-provider-model" class="prov-value highlight">Google Gemini · gemini-2.5-flash</span>
                             </div>
                             <div class="prov-item">
                                 <span class="prov-label">API Key Identifier</span>
-                                <span id="prov-key-id" class="prov-badge">aspirinexar</span>
+                                <span id="prov-key-id" class="prov-badge">1_textline_gemini_9838_AlReasoningValidationSystem</span>
                             </div>
                             <div class="prov-item">
                                 <span class="prov-label">Fallback</span>
                                 <span id="prov-fallback" class="prov-badge">No</span>
+                            </div>
+                            <div class="prov-item">
+                                <span class="prov-label">Model Fallback</span>
+                                <span id="prov-model-fallback" class="prov-badge">No</span>
+                            </div>
+                            <div class="prov-item">
+                                <span class="prov-label">Key Fallback</span>
+                                <span id="prov-key-fallback" class="prov-badge">No</span>
+                            </div>
+                            <div class="prov-item">
+                                <span class="prov-label">Attempts</span>
+                                <span id="prov-attempts" class="prov-badge">1</span>
                             </div>
                             <div class="prov-item">
                                 <span class="prov-label">Status</span>
@@ -940,19 +951,28 @@
                 const provModelEl = document.getElementById('prov-provider-model');
                 const provKeyEl = document.getElementById('prov-key-id');
                 const provFallbackEl = document.getElementById('prov-fallback');
+                const provModelFallbackEl = document.getElementById('prov-model-fallback');
+                const provKeyFallbackEl = document.getElementById('prov-key-fallback');
+                const provAttemptsEl = document.getElementById('prov-attempts');
                 const provContainer = document.getElementById('provenance-container');
 
                 if (provModelEl) provModelEl.textContent = `${meta.provider} · ${meta.model}`;
                 if (provKeyEl) provKeyEl.textContent = meta.key_id;
                 
                 if (provFallbackEl) {
-                    if (meta.is_fallback) {
-                        provFallbackEl.textContent = 'Yes';
-                        provFallbackEl.className = 'prov-badge fallback-yes';
-                    } else {
-                        provFallbackEl.textContent = 'No';
-                        provFallbackEl.className = 'prov-badge';
-                    }
+                    provFallbackEl.textContent = meta.is_fallback ? 'Yes' : 'No';
+                    provFallbackEl.className = meta.is_fallback ? 'prov-badge fallback-yes' : 'prov-badge';
+                }
+                if (provModelFallbackEl) {
+                    provModelFallbackEl.textContent = meta.model_fallback ? 'Yes' : 'No';
+                    provModelFallbackEl.className = meta.model_fallback ? 'prov-badge fallback-yes' : 'prov-badge';
+                }
+                if (provKeyFallbackEl) {
+                    provKeyFallbackEl.textContent = meta.key_fallback ? 'Yes' : 'No';
+                    provKeyFallbackEl.className = meta.key_fallback ? 'prov-badge fallback-yes' : 'prov-badge';
+                }
+                if (provAttemptsEl) {
+                    provAttemptsEl.textContent = meta.attempt_count || 1;
                 }
 
                 if (provContainer) provContainer.style.display = 'flex';
