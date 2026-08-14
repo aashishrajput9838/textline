@@ -52,8 +52,8 @@ def load_api_keys_map():
     for env_var, env_val in os.environ.items():
         if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
             raw_key_id = env_var[15:]
-            if raw_key_id.lower() == "textline_gemini_9838_alreasoningvalidationsystem":
-                canonical_id = "textline_gemini_9838_AlReasoningValidationSystem"
+            if raw_key_id.lower() in ("1_textline_gemini_9838_alreasoningvalidationsystem", "textline_gemini_9838_alreasoningvalidationsystem"):
+                canonical_id = "1_textline_gemini_9838_AlReasoningValidationSystem"
             else:
                 canonical_id = raw_key_id
 
@@ -122,7 +122,7 @@ def generate_content_openai_fallback(prompt, base64_image_url):
 
 # Project Metadata Mapping (associates safe key IDs to separate project metadata)
 PROJECT_METADATA_MAP = {
-    "textline_gemini_9838_AlReasoningValidationSystem": {
+    "1_textline_gemini_9838_AlReasoningValidationSystem": {
         "project_number": "333673007466",
         "project_name": "textline_gemini_9838_AlReasoningValidationSystem"
     }
@@ -313,8 +313,8 @@ def discover_all_gemini_keys():
     for env_var, env_val in os.environ.items():
         if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
             raw_key_id = env_var[15:]
-            if raw_key_id.lower() == "textline_gemini_9838_alreasoningvalidationsystem":
-                canonical_id = "textline_gemini_9838_AlReasoningValidationSystem"
+            if raw_key_id.lower() in ("1_textline_gemini_9838_alreasoningvalidationsystem", "textline_gemini_9838_alreasoningvalidationsystem"):
+                canonical_id = "1_textline_gemini_9838_AlReasoningValidationSystem"
             else:
                 canonical_id = raw_key_id
 
