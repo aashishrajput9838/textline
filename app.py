@@ -69,17 +69,17 @@ API_KEYS_MAP = load_api_keys_map()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
 
 # Default active Gemini models list for google-genai SDK
-DEFAULT_GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-latest"]
+DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro"]
 
 def get_available_gemini_models(client):
     """Dynamically discover active generateContent models for a given client key."""
     try:
-        discovered = ["gemini-flash-latest"]
+        discovered = ["gemini-2.5-flash", "gemini-flash-latest"]
         for m in client.models.list():
             m_name = getattr(m, 'name', '') or str(m)
             if 'gemini' in m_name.lower():
                 clean_name = m_name.replace('models/', '')
-                if clean_name not in discovered:
+                if clean_name not in discovered and "1.5" not in clean_name:
                     discovered.append(clean_name)
         if discovered:
             return discovered
@@ -334,11 +334,11 @@ def discover_all_gemini_keys():
     return discovered_keys
 
 def test_single_key_diagnostic(key_id, api_key):
-    """Tests a single Gemini API key independently against gemini-flash-latest and measures latency."""
+    """Tests a single Gemini API key independently against available models and measures latency."""
     if not api_key or not api_key.strip() or api_key == "YOUR_GEMINI_API_KEY":
         return {
             "key_id": key_id,
-            "model": "gemini-flash-latest",
+            "model": "gemini-2.5-flash",
             "status": "Error",
             "latency_ms": 0,
             "http_code": 400,
@@ -346,70 +346,84 @@ def test_single_key_diagnostic(key_id, api_key):
         }
 
     start_time = time.time()
+    last_err_details = {}
+    models_to_test = ["gemini-2.5-flash", "gemini-flash-latest"]
+    
     try:
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-flash-latest",
-            contents="Hi"
-        )
-        latency = int((time.time() - start_time) * 1000)
-        
-        if response and response.text:
-            return {
-                "key_id": key_id,
-                "model": "gemini-flash-latest",
-                "status": "Working",
-                "latency_ms": latency,
-                "http_code": 200,
-                "details": "PASS"
-            }
-        else:
-            return {
-                "key_id": key_id,
-                "model": "gemini-flash-latest",
-                "status": "Failed",
-                "latency_ms": latency,
-                "http_code": 200,
-                "details": "Empty Response"
-            }
-
-    except Exception as e:
-        latency = int((time.time() - start_time) * 1000)
-        err_str = str(e)
-        
-        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-            status = "Quota"
-            code = 429
-            details = "429 Quota Exhausted"
-        elif "403" in err_str or "PERMISSION_DENIED" in err_str:
-            status = "Unauthorized"
-            code = 403
-            details = "403 Access Restricted / Denied"
-        elif "404" in err_str or "NOT_FOUND" in err_str:
-            status = "Error"
-            code = 404
-            details = "404 Model Unavailable"
-        elif "BILLING" in err_str.upper():
-            status = "Billing"
-            code = 402
-            details = "Billing Required"
-        elif "400" in err_str or "INVALID_ARGUMENT" in err_str:
-            status = "Failed"
-            code = 400
-            details = "400 Invalid Argument / Key"
-        else:
-            status = "Error"
-            code = 500
-            details = err_str.split("\n")[0][:60]
-
+    except Exception as client_init_err:
         return {
             "key_id": key_id,
-            "model": "gemini-flash-latest",
-            "status": status,
-            "latency_ms": latency,
-            "http_code": code,
-            "details": details
+            "model": "gemini-2.5-flash",
+            "status": "Failed",
+            "latency_ms": int((time.time() - start_time) * 1000),
+            "http_code": 400,
+            "details": f"Client Init Failed: {str(client_init_err)[:50]}"
         }
+
+    for model_name in models_to_test:
+        model_start = time.time()
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents="Hi"
+            )
+            latency = int((time.time() - model_start) * 1000)
+            if response and response.text:
+                return {
+                    "key_id": key_id,
+                    "model": model_name,
+                    "status": "Working",
+                    "latency_ms": latency,
+                    "http_code": 200,
+                    "details": "PASS"
+                }
+        except Exception as e:
+            latency = int((time.time() - model_start) * 1000)
+            err_str = str(e)
+            
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                status = "Quota"
+                code = 429
+                details = "429 Quota Exhausted"
+            elif "403" in err_str or "PERMISSION_DENIED" in err_str:
+                status = "Unauthorized"
+                code = 403
+                details = "403 Access Restricted / Denied"
+            elif "404" in err_str or "NOT_FOUND" in err_str:
+                status = "Error"
+                code = 404
+                details = "404 Model Unavailable"
+            elif "BILLING" in err_str.upper() or "402" in err_str:
+                status = "Billing"
+                code = 402
+                details = "402 Billing Required"
+            elif "400" in err_str or "INVALID_ARGUMENT" in err_str:
+                status = "Failed"
+                code = 400
+                details = "400 Invalid Argument / Key"
+            else:
+                status = "Error"
+                code = 500
+                details = err_str.split("\n")[0][:60]
+
+            last_err_details = {
+                "key_id": key_id,
+                "model": model_name,
+                "status": status,
+                "latency_ms": latency,
+                "http_code": code,
+                "details": details
+            }
+
+    return last_err_details if last_err_details else {
+        "key_id": key_id,
+        "model": "gemini-2.5-flash",
+        "status": "Failed",
+        "latency_ms": int((time.time() - start_time) * 1000),
+        "http_code": 500,
+        "details": "All Model Tests Failed"
+    }
 
 def run_all_keys_health_check():
     """Runs independent diagnostic scan across every discovered Gemini API key."""
