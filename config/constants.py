@@ -3,16 +3,16 @@ Configuration constants for Textline application.
 """
 
 DEFAULT_GEMINI_MODELS = [
-    "gemini-flash-latest",
     "gemini-2.5-flash",
-    "gemini-flash-lite-latest"
+    "gemini-flash-lite-latest",
+    "gemini-flash-latest"
 ]
 
 # Supported Gemini models for matrix diagnostic testing and fallback tracking
 SUPPORTED_HEALTH_MODELS = [
-    "gemini-flash-latest",
     "gemini-2.5-flash",
-    "gemini-flash-lite-latest"
+    "gemini-flash-lite-latest",
+    "gemini-flash-latest"
 ]
 
 

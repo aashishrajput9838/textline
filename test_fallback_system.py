@@ -620,7 +620,7 @@ class TestFallbackSystem(unittest.TestCase):
     def test_22_model_specific_quota_exhaustion(self, mock_genai_client):
         """
         22. Test Model-Specific 429 Quota Exhaustion:
-        Key 1 returns 429 on model A (gemini-2.5-flash) but succeeds on model B (gemini-2.5-flash-lite).
+        Key 1 returns 429 on model A (gemini-2.5-flash) but succeeds on model B (gemini-flash-lite-latest).
         """
         from app import KEY_MODEL_HEALTH_REGISTRY
         KEY_MODEL_HEALTH_REGISTRY.clear()
@@ -642,9 +642,9 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Answer")
-            self.assertEqual(meta["model"], "gemini-2.5-flash-lite")
+            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
             self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-2.5-flash"]["status"], "QUOTA_EXHAUSTED")
-            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-2.5-flash-lite"]["status"], "WORKING")
+            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-flash-lite-latest"]["status"], "WORKING")
 
         print("[PASS] Test 22: Model-specific quota exhaustion verified!")
 
@@ -652,7 +652,7 @@ class TestFallbackSystem(unittest.TestCase):
     def test_23_model_specific_404_preserves_key(self, mock_genai_client):
         """
         23. Test Model-Specific 404 Preserves Key:
-        Key 1 returns 404 on model A (gemini-2.5-flash) but succeeds on model B (gemini-2.5-flash-lite).
+        Key 1 returns 404 on model A (gemini-2.5-flash) but succeeds on model B (gemini-flash-lite-latest).
         Key is NOT marked globally invalid.
         """
         from app import KEY_MODEL_HEALTH_REGISTRY
@@ -675,9 +675,9 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Success")
-            self.assertEqual(meta["model"], "gemini-2.5-flash-lite")
+            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
             self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-2.5-flash"]["status"], "MODEL_UNAVAILABLE")
-            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-2.5-flash-lite"]["status"], "WORKING")
+            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-flash-lite-latest"]["status"], "WORKING")
 
         print("[PASS] Test 23: Model-specific 404 preserves key validity verified!")
 
@@ -716,7 +716,7 @@ class TestFallbackSystem(unittest.TestCase):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Key 2 Model B Answer")
             self.assertEqual(meta["key_id"], "2_key")
-            self.assertEqual(meta["model"], "gemini-2.5-flash-lite")
+            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
 
         print("[PASS] Test 24: Key 2 404 does not mark Key 2 globally invalid verified!")
 
@@ -786,9 +786,9 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Answer")
-            self.assertEqual(meta["model"], "gemini-2.5-flash-lite")
+            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
             # gemini-2.5-flash was skipped!
-            mock_client.models.generate_content.assert_called_once_with(model="gemini-2.5-flash-lite", contents=["test_prompt"])
+            mock_client.models.generate_content.assert_called_once_with(model="gemini-flash-lite-latest", contents=["test_prompt"])
 
         print("[PASS] Test 27: Skipping known QUOTA_EXHAUSTED combination verified!")
 
@@ -814,8 +814,8 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Answer")
-            self.assertEqual(meta["model"], "gemini-2.5-flash-lite")
-            mock_client.models.generate_content.assert_called_once_with(model="gemini-2.5-flash-lite", contents=["test_prompt"])
+            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
+            mock_client.models.generate_content.assert_called_once_with(model="gemini-flash-lite-latest", contents=["test_prompt"])
 
         print("[PASS] Test 28: Skipping known MODEL_UNAVAILABLE combination verified!")
 
@@ -922,7 +922,7 @@ class TestFallbackSystem(unittest.TestCase):
         def generate_side_effect(model, contents):
             if model == "gemini-2.5-flash":
                 raise Exception("429 RESOURCE_EXHAUSTED: Daily quota reached")
-            elif model == "gemini-2.5-flash-lite":
+            elif model == "gemini-flash-lite-latest":
                 raise Exception("404 NOT_FOUND: Model unavailable")
             return mock_resp
 
@@ -956,7 +956,7 @@ class TestFallbackSystem(unittest.TestCase):
 
         # Pre-seed health state
         update_key_model_health("1_key", "gemini-2.5-flash", "QUOTA_EXHAUSTED", 429)
-        update_key_model_health("1_key", "gemini-2.5-flash-lite", "MODEL_UNAVAILABLE", 404)
+        update_key_model_health("1_key", "gemini-flash-lite-latest", "MODEL_UNAVAILABLE", 404)
 
         mock_client = MagicMock()
         mock_resp = MagicMock()
@@ -1090,12 +1090,12 @@ class TestFallbackSystem(unittest.TestCase):
         # Mark Key 1 and Key 2 combinations as dead
         KEY_MODEL_HEALTH_REGISTRY["1_key"] = {
             "gemini-2.5-flash": {"status": "QUOTA_EXHAUSTED"},
-            "gemini-2.5-flash-lite": {"status": "MODEL_UNAVAILABLE"},
+            "gemini-flash-lite-latest": {"status": "MODEL_UNAVAILABLE"},
             "gemini-flash-latest": {"status": "QUOTA_EXHAUSTED"}
         }
         KEY_MODEL_HEALTH_REGISTRY["2_key"] = {
             "gemini-2.5-flash": {"status": "MODEL_UNAVAILABLE"},
-            "gemini-2.5-flash-lite": {"status": "MODEL_UNAVAILABLE"},
+            "gemini-flash-lite-latest": {"status": "MODEL_UNAVAILABLE"},
             "gemini-flash-latest": {"status": "QUOTA_EXHAUSTED"}
         }
 
@@ -1148,7 +1148,7 @@ class TestFallbackSystem(unittest.TestCase):
             self.assertIn("Key 1_key:", err_msg)
             self.assertIn("Key 2_key:", err_msg)
             self.assertIn("• gemini-2.5-flash -> QUOTA_EXHAUSTED", err_msg)
-            self.assertIn("• gemini-2.5-flash-lite -> MODEL_UNAVAILABLE", err_msg)
+            self.assertIn("• gemini-flash-lite-latest -> MODEL_UNAVAILABLE", err_msg)
 
         print("[PASS] Test 39: Mixed 429/404 key1/key2 exhaustion with structured error code verified!")
 
@@ -1222,6 +1222,35 @@ class TestFallbackSystem(unittest.TestCase):
 
         client.disconnect()
         print("[PASS] Test 41: Terminal pipeline error logs and NO_AVAILABLE_MODEL verified!")
+
+    def test_42_specialized_models_filtered_from_discovery(self):
+        """
+        42. Test Specialized Non-Generative Models Filtered from Model Discovery:
+        Asserts that model_manager.get_available_gemini_models excludes non-multimodal/specialized models
+        (e.g., -tts, -video-, -audio, -embed) and uses clean DEFAULT_GEMINI_MODELS source of truth.
+        """
+        from ai.model_manager import get_available_gemini_models
+        from config.constants import DEFAULT_GEMINI_MODELS
+
+        mock_client = MagicMock()
+        m_tts = MagicMock(); m_tts.name = "models/gemini-2.5-flash-preview-tts"
+        m_vid = MagicMock(); m_vid.name = "models/gemini-3.7-flash-video-understanding-eap"
+        m_aud = MagicMock(); m_aud.name = "models/gemini-audio-transcribe"
+        m_emb = MagicMock(); m_emb.name = "models/gemini-embedding-001"
+        m_valid = MagicMock(); m_valid.name = "models/gemini-flash-latest"
+
+        mock_client.models.list.return_value = [m_tts, m_vid, m_aud, m_emb, m_valid]
+
+        discovered = get_available_gemini_models(mock_client)
+
+        self.assertIn("gemini-2.5-flash", discovered)
+        self.assertIn("gemini-flash-lite-latest", discovered)
+        self.assertIn("gemini-flash-latest", discovered)
+
+        for invalid_name in ["gemini-2.5-flash-preview-tts", "gemini-3.7-flash-video-understanding-eap", "gemini-audio-transcribe", "gemini-embedding-001"]:
+            self.assertNotIn(invalid_name, discovered, f"{invalid_name} should be excluded from model discovery")
+
+        print("[PASS] Test 42: Specialized non-generative models filtered from discovery verified!")
 
 if __name__ == '__main__':
     unittest.main()
