@@ -4,6 +4,27 @@
 
 const socket = io();
 
+// Monitor State Persistence (sessionStorage)
+const _MONITOR_STATE_KEY = 'textline_monitor_state_v1';
+const _MAX_PERSISTED_LOGS = 200;
+
+function _loadMonitorState() {
+    try {
+        const raw = sessionStorage.getItem(_MONITOR_STATE_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+}
+
+function saveMonitorState(updates) {
+    try {
+        const state = _loadMonitorState();
+        Object.assign(state, updates);
+        sessionStorage.setItem(_MONITOR_STATE_KEY, JSON.stringify(state));
+    } catch (e) {
+        console.warn('[MonitorState] Failed to save:', e);
+    }
+}
+
 // Socket Connection Handlers
 socket.on('connect', () => {
     if (connectionDot) connectionDot.className = 'status-dot online';
@@ -37,6 +58,14 @@ socket.on('status_update', (data) => {
             activeRouteEl.textContent = 'Selecting active route...';
             activeRouteEl.style.color = '#60a5fa';
         }
+        saveMonitorState({
+            status: statusKey,
+            message: data.message || '',
+            timestamp: data.timestamp || '',
+            pipelineId: data.pipeline_id || '',
+            activeRouteStr: 'Selecting active route...',
+            activeRouteColor: '#60a5fa'
+        });
     } else if (statusKey === 'idle') {
         if (activeRouteEl) {
             if (window.lastSuccessfulRouteStr) {
@@ -52,6 +81,13 @@ socket.on('status_update', (data) => {
             activeRouteEl.textContent = 'Execution Error (Route Failed)';
             activeRouteEl.style.color = '#f87171';
         }
+        saveMonitorState({
+            status: statusKey,
+            message: data.message || '',
+            timestamp: data.timestamp || '',
+            activeRouteStr: 'Execution Error (Route Failed)',
+            activeRouteColor: '#f87171'
+        });
     }
 
     if (statusKey === 'success' && data.answer) {
@@ -117,6 +153,19 @@ socket.on('status_update', (data) => {
 
         if (provContainer) provContainer.style.display = 'flex';
 
+        // Persist Monitor state for cross-page restoration
+        saveMonitorState({
+            status: 'success',
+            answer: data.answer,
+            message: data.message || 'Done! Answer copied to clipboard.',
+            timestamp: data.timestamp || '',
+            metadata: meta,
+            pipelineId: data.pipeline_id || '',
+            activeRouteStr: window.lastSuccessfulRouteStr || '',
+            activeRouteColor: '#34d399',
+            provenanceTag: `${meta.provider} · ${meta.model} · ${meta.key_id}`
+        });
+
         // Record Daily Key Usage
         if (typeof recordGenerationUsage === 'function') {
             recordGenerationUsage(meta, data.timestamp || new Date().toLocaleTimeString());
@@ -140,6 +189,9 @@ socket.on('image_preview', (data) => {
             previewImage.style.display = 'block';
         }
         if (emptyPreview) emptyPreview.style.display = 'none';
+
+        // Persist image URL for Monitor state restoration
+        saveMonitorState({ imageUrl: data.image_url });
     }
 });
 
@@ -157,6 +209,37 @@ socket.on('pipeline_log', (data) => {
     if (typeof handlePipelineLogEvent === 'function') {
         handlePipelineLogEvent(data);
     }
+
+    // Persist pipeline log entry for Monitor state restoration
+    try {
+        const state = _loadMonitorState();
+        if (!Array.isArray(state.pipelineLogs)) state.pipelineLogs = [];
+        state.pipelineLogs.push({
+            timestamp: data.timestamp || '',
+            stage: data.stage || '',
+            message: data.message || '',
+            level: data.level || 'INFO'
+        });
+        if (state.pipelineLogs.length > _MAX_PERSISTED_LOGS) {
+            state.pipelineLogs = state.pipelineLogs.slice(-_MAX_PERSISTED_LOGS);
+        }
+        if (data.pipeline_id) state.pipelineId = data.pipeline_id;
+
+        // Persist pipeline summary banner on PIPELINE_COMPLETE
+        if (data.stage === 'PIPELINE_COMPLETE') {
+            const isErr = data.level === 'ERROR' || !!data.error_code;
+            const statusStr = isErr ? 'ERROR' : 'SUCCESS';
+            const errCodeStr = data.error_code ? ` | ERROR CODE: ${data.error_code}` : '';
+            const timeStr = data.elapsed_ms ? ` | TOTAL TIME: ${data.elapsed_ms} ms` : '';
+            state.pipelineSummary = {
+                visible: true,
+                className: isErr ? 'pipeline-summary-banner error' : 'pipeline-summary-banner success',
+                text: `FINAL STATUS: ${statusStr}${errCodeStr}${timeStr}`
+            };
+        }
+
+        sessionStorage.setItem(_MONITOR_STATE_KEY, JSON.stringify(state));
+    } catch (e) { /* silent */ }
 });
 
 // Register Key Health Event Listeners

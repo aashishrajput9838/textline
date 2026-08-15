@@ -79,6 +79,11 @@ function clearPipelineLogs() {
     if (bannerEl) bannerEl.style.display = 'none';
     if (badgeEl) badgeEl.textContent = 'ID: NONE';
     currentPipelineId = null;
+
+    // Clear persisted pipeline logs (preserve screenshot/answer/provenance)
+    if (typeof saveMonitorState === 'function') {
+        saveMonitorState({ pipelineLogs: [], pipelineId: null, pipelineSummary: null });
+    }
 }
 
 function togglePipelineLogConsole() {
