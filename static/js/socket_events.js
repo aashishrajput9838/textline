@@ -30,6 +30,30 @@ socket.on('status_update', (data) => {
 
     const provTagEl = document.getElementById('status-provenance-tag');
 
+    const activeRouteEl = document.getElementById('active-route-display');
+
+    if (statusKey === 'processing') {
+        if (activeRouteEl) {
+            activeRouteEl.textContent = 'Selecting active route...';
+            activeRouteEl.style.color = '#60a5fa';
+        }
+    } else if (statusKey === 'idle') {
+        if (activeRouteEl) {
+            if (window.lastSuccessfulRouteStr) {
+                activeRouteEl.textContent = window.lastSuccessfulRouteStr;
+                activeRouteEl.style.color = '#34d399';
+            } else {
+                activeRouteEl.textContent = 'None (Idle)';
+                activeRouteEl.style.color = 'var(--text-muted)';
+            }
+        }
+    } else if (statusKey === 'error') {
+        if (activeRouteEl) {
+            activeRouteEl.textContent = 'Execution Error (Route Failed)';
+            activeRouteEl.style.color = '#f87171';
+        }
+    }
+
     if (statusKey === 'success' && data.answer) {
         // Display Answer via textContent (SAFE FROM INJECTION)
         if (answerText) {
@@ -49,10 +73,20 @@ socket.on('status_update', (data) => {
 
         console.log("PROVENANCE EVENT:", meta);
 
+        if (activeRouteEl) {
+            const shortKey = meta.key_id ? (meta.key_id.length > 25 ? meta.key_id.substring(0, 23) + '...' : meta.key_id) : 'Key';
+            const fbText = meta.is_fallback ? ' ⚡ (Fallback Active)' : '';
+            const routeStr = `${shortKey} → ${meta.model}${fbText}`;
+            window.lastSuccessfulRouteStr = routeStr;
+            activeRouteEl.textContent = routeStr;
+            activeRouteEl.style.color = '#34d399';
+        }
+
         if (provTagEl) {
             provTagEl.textContent = `${meta.provider} · ${meta.model} · ${meta.key_id}`;
             provTagEl.style.display = 'inline-flex';
         }
+
 
         const provModelEl = document.getElementById('prov-provider-model');
         const provKeyEl = document.getElementById('prov-key-id');

@@ -148,32 +148,49 @@ function renderUsageTracker() {
     }
 
     keysToDisplay.forEach(keyId => {
-        const keyInfo = dayData[keyId] || { used: 0, last_used: '', model: activeKeysMap[keyId] || 'gemini-2.5-flash' };
+        const keyInfo = dayData[keyId] || { used: 0, last_used: '', model: '' };
         const usedCount = keyInfo.used || 0;
         const keyLimit = (usageState.key_limits && usageState.key_limits[keyId]) || usageState.daily_limit || DEFAULT_DAILY_LIMIT;
         const remaining = Math.max(keyLimit - usedCount, 0);
         const percent = Math.min(Math.round((usedCount / keyLimit) * 100), 100);
 
-        const healthState = (window.latestHealthStatus && window.latestHealthStatus[keyId]) || { status: 'WORKING', model: keyInfo.model };
-        const statusBadgeClass = (healthState.status || 'WORKING').toLowerCase();
+        // Derive Last Active Model strictly from actual request execution provenance (not health matrix)
+        const lastActiveModel = keyInfo.model || (usageState.key_last_models && usageState.key_last_models[keyId]) || 'gemini-flash-latest';
+
+        // Safe health status lookup in nested model-level health object
+        let healthStatusStr = 'WORKING';
+        if (window.latestHealthStatus && window.latestHealthStatus[keyId]) {
+            const keyHealthObj = window.latestHealthStatus[keyId];
+            if (lastActiveModel && keyHealthObj[lastActiveModel]) {
+                healthStatusStr = keyHealthObj[lastActiveModel].status || 'WORKING';
+            } else {
+                const firstModelKey = Object.keys(keyHealthObj)[0];
+                if (firstModelKey && keyHealthObj[firstModelKey]) {
+                    healthStatusStr = keyHealthObj[firstModelKey].status || 'WORKING';
+                }
+            }
+        }
+        const statusBadgeClass = healthStatusStr.toLowerCase();
 
         const isLastUsed = (lastUsedMeta.key_id === keyId && selectedDate === todayStr);
 
         const card = document.createElement('div');
         card.className = 'usage-key-card';
 
+        const shortKeyId = keyId.length > 32 ? keyId.substring(0, 30) + '...' : keyId;
+
         card.innerHTML = `
             <div class="usage-key-header">
                 <div class="usage-key-title">
-                    <span class="usage-key-id">${escapeHtml(keyId)}</span>
-                    <span class="badge-status ${statusBadgeClass}">${escapeHtml(healthState.status || 'WORKING')}</span>
-                    ${isLastUsed ? `<span class="usage-last-used-tag">● LAST USED: ${escapeHtml(lastUsedMeta.time || keyInfo.last_used)}</span>` : ''}
+                    <span class="usage-key-id" title="${escapeHtml(keyId)}">${escapeHtml(shortKeyId)}</span>
+                    ${isLastUsed ? `<span class="usage-last-used-tag">● LAST ACTIVE: ${escapeHtml(lastUsedMeta.time || keyInfo.last_used)}</span>` : ''}
                 </div>
                 <div class="usage-key-sub">
-                    Model: <b class="model-highlight">${escapeHtml(keyInfo.model || healthState.model || 'gemini-2.5-flash')}</b>
+                    Last Active Model: <b class="model-highlight">${escapeHtml(lastActiveModel)}</b>
                 </div>
             </div>
             <div class="usage-key-body">
+
                 <div class="usage-metrics-row">
                     <div>Used Today: <b>${usedCount} / ${keyLimit}</b></div>
                     <div>Remaining (configured limit): <b class="remaining-highlight">${remaining}</b></div>

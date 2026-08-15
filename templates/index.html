@@ -827,6 +827,75 @@
             color: #f87171;
             border: 1px solid rgba(248, 113, 113, 0.3);
         }
+        /* Active Route Indicator */
+        .active-route-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 0.35rem 0.75rem;
+            border-radius: 8px;
+            margin-top: 0.75rem;
+        }
+
+        .active-route-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .active-route-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            color: #a855f7;
+            font-weight: 600;
+        }
+
+        /* Health Summary Bar */
+        .health-summary-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 0.5rem 0.85rem;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .summary-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+
+        .summary-pill.total { background: rgba(255, 255, 255, 0.08); color: #f3f4f6; }
+        .summary-pill.working { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+        .summary-pill.quota { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+        .summary-pill.unavailable { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .summary-pill.service-unavailable { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+        .summary-pill.error { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+
+        /* Grouped Key Header in Health Matrix */
+        tr.key-group-row td {
+            background: rgba(99, 102, 241, 0.08) !important;
+            color: #a855f7;
+            font-weight: 700;
+            font-size: 0.82rem;
+            padding: 0.6rem 0.85rem !important;
+            border-top: 1px solid rgba(99, 102, 241, 0.2) !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        }
     </style>
 </head>
 <body>
@@ -858,6 +927,10 @@
                     <span id="status-badge" class="status-badge idle">IDLE</span>
                     <span id="status-message" class="status-message">Initializing background listener...</span>
                 </div>
+                <div id="active-route-container" class="active-route-container">
+                    <span class="active-route-label">ACTIVE ROUTE:</span>
+                    <span id="active-route-display" class="active-route-display">None (Idle)</span>
+                </div>
             </div>
 
             <!-- Live Screenshot Pipeline Execution Log Panel -->
@@ -867,9 +940,14 @@
                         <span>📊 SCREENSHOT PROCESSING PIPELINE LOG</span>
                         <span id="pipeline-id-badge" class="pipeline-id-badge">ID: NONE</span>
                     </div>
-                    <button id="clear-pipeline-logs-btn" class="clear-logs-btn" onclick="clearPipelineLogs()">
-                        🗑️ Clear Logs
-                    </button>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <button id="toggle-pipeline-log-btn" class="clear-logs-btn" onclick="togglePipelineLogConsole()">
+                            ▼ Collapse
+                        </button>
+                        <button id="clear-pipeline-logs-btn" class="clear-logs-btn" onclick="clearPipelineLogs()">
+                            🗑️ Clear Logs
+                        </button>
+                    </div>
                 </div>
                 <div id="pipeline-log-console" class="pipeline-log-console">
                     <div class="pipeline-log-entry info">
@@ -901,7 +979,9 @@
                     <div class="spinner"></div>
                     <span id="key-health-status-text">Scanning configured API keys...</span>
                 </div>
+                <div id="key-health-summary" class="health-summary-bar" style="display: none;"></div>
                 <div id="key-health-table-wrapper" class="key-health-table-wrapper" style="display: none;">
+
                     <table class="key-health-table">
                         <thead>
                             <tr>

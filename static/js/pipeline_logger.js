@@ -80,3 +80,19 @@ function clearPipelineLogs() {
     if (badgeEl) badgeEl.textContent = 'ID: NONE';
     currentPipelineId = null;
 }
+
+function togglePipelineLogConsole() {
+    const consoleEl = document.getElementById('pipeline-log-console');
+    const toggleBtn = document.getElementById('toggle-pipeline-log-btn');
+    if (!consoleEl || !toggleBtn) return;
+
+    if (consoleEl.style.display === 'none') {
+        consoleEl.style.display = 'block';
+        toggleBtn.innerHTML = '▼ Collapse';
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    } else {
+        consoleEl.style.display = 'none';
+        toggleBtn.innerHTML = '▶ Expand';
+    }
+}
+
