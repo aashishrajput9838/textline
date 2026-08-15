@@ -271,21 +271,95 @@ function renderUsageTracker() {
 }
 
 function configureDailyLimit() {
+    // Remove existing modal if present (prevent duplicates)
+    const existingModal = document.getElementById('limit-config-modal');
+    if (existingModal) existingModal.remove();
+
     const currentLimit = usageState.daily_limit || DEFAULT_DAILY_LIMIT;
-    const input = prompt(`Configure default Daily Limit per key:`, currentLimit);
-    if (input !== null) {
-        const val = parseInt(input.trim(), 10);
-        if (!isNaN(val) && val > 0) {
-            usageState.daily_limit = val;
-            saveUsageData();
-            renderUsageTracker();
-            alert(`Daily limit set to ${val} requests/day per key.`);
-        } else if (input.trim() !== "") {
-            alert(`Invalid limit. Please enter a positive number.`);
+
+    // Create custom inline modal dialog (replaces window.prompt which is auto-dismissed in some browsers)
+    const overlay = document.createElement('div');
+    overlay.id = 'limit-config-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#0f1729;border:1px solid #1e293b;border-radius:10px;padding:24px;min-width:340px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,0.5);color:#e2e8f0;font-family:Inter,sans-serif;';
+
+    dialog.innerHTML = `
+        <div style="font-size:14px;font-weight:700;margin-bottom:16px;color:#f1f5f9;">⚙️ Configure Daily Limit</div>
+        <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:6px;">Requests per key per day:</label>
+        <input id="limit-config-input" type="number" min="1" value="${currentLimit}" style="width:100%;padding:8px 12px;background:#0a0f1a;border:1px solid #1e293b;border-radius:6px;color:#f1f5f9;font-size:14px;font-family:'JetBrains Mono',monospace;outline:none;box-sizing:border-box;" />
+        <div id="limit-config-error" style="font-size:11px;color:#f87171;margin-top:6px;min-height:16px;"></div>
+        <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+            <button id="limit-config-cancel" style="padding:6px 16px;background:transparent;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;font-size:12px;">Cancel</button>
+            <button id="limit-config-apply" style="padding:6px 16px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:12px;font-weight:600;">Apply</button>
+        </div>
+    `;
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const inputEl = document.getElementById('limit-config-input');
+    const errorEl = document.getElementById('limit-config-error');
+    const cancelBtn = document.getElementById('limit-config-cancel');
+    const applyBtn = document.getElementById('limit-config-apply');
+
+    // Focus input and select text
+    inputEl.focus();
+    inputEl.select();
+
+    function closeModal() {
+        const modal = document.getElementById('limit-config-modal');
+        if (modal) modal.remove();
+    }
+
+    function applyLimit() {
+        const trimmed = inputEl.value.trim();
+        if (trimmed === '') {
+            errorEl.textContent = 'Limit cannot be empty.';
+            return;
         }
+        const val = parseInt(trimmed, 10);
+        if (isNaN(val) || val <= 0) {
+            errorEl.textContent = 'Please enter a valid positive number greater than 0.';
+            return;
+        }
+        usageState.daily_limit = val;
+        saveUsageData();
+        closeModal();
+        renderUsageTracker();
+    }
+
+    cancelBtn.addEventListener('click', closeModal);
+    applyBtn.addEventListener('click', applyLimit);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeModal();
+    });
+    inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') applyLimit();
+        if (e.key === 'Escape') closeModal();
+    });
+}
+
+// Global window binding for backwards compatibility
+window.configureDailyLimit = configureDailyLimit;
+
+let _limitBtnBound = false;
+function initLimitButtonListener() {
+    if (_limitBtnBound) return;
+    const btn = document.getElementById('set-limit-btn');
+    if (btn) {
+        btn.addEventListener('click', configureDailyLimit);
+        _limitBtnBound = true;
     }
 }
 
-// Initialize Usage Tracker on Script Load
+// Initialize Usage Tracker & Button Listener on Script Load
 loadUsageData();
 renderUsageTracker();
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLimitButtonListener);
+} else {
+    initLimitButtonListener();
+}
