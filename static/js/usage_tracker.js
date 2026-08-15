@@ -29,6 +29,24 @@ function loadUsageData() {
                 usageState.key_limits = parsed.key_limits || {};
                 usageState.days = parsed.days || {};
                 usageState.processed_event_ids = parsed.processed_event_ids || {};
+
+                // Backward-compatible migration for model-wise usage tracking
+                Object.keys(usageState.days).forEach(dateStr => {
+                    const dayObj = usageState.days[dateStr];
+                    if (dayObj && typeof dayObj === 'object') {
+                        Object.keys(dayObj).forEach(keyId => {
+                            const kData = dayObj[keyId];
+                            if (kData && typeof kData === 'object') {
+                                if (!kData.models || typeof kData.models !== 'object') {
+                                    kData.models = {};
+                                    if (kData.used > 0 && kData.model) {
+                                        kData.models[kData.model] = kData.used;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                });
             }
         }
         const badge = document.getElementById('usage-persistence-status');
@@ -65,6 +83,7 @@ function getLocalDateString(d = new Date()) {
 function recordGenerationUsage(metadata, timeStr) {
     if (!metadata || !metadata.key_id) return;
     const keyId = metadata.key_id;
+    const modelName = metadata.model || 'gemini-2.5-flash';
 
     const genId = metadata.generation_id || `gen_${Date.now()}_${keyId}`;
     if (usageState.processed_event_ids[genId]) {
@@ -82,17 +101,24 @@ function recordGenerationUsage(metadata, timeStr) {
         usageState.days[todayStr][keyId] = {
             used: 0,
             last_used: '',
-            model: metadata.model || 'gemini-2.5-flash'
+            model: modelName,
+            models: {}
         };
     }
 
-    usageState.days[todayStr][keyId].used = (usageState.days[todayStr][keyId].used || 0) + 1;
-    usageState.days[todayStr][keyId].last_used = timeStr || new Date().toLocaleTimeString();
-    usageState.days[todayStr][keyId].model = metadata.model || usageState.days[todayStr][keyId].model;
+    const keyData = usageState.days[todayStr][keyId];
+    keyData.used = (keyData.used || 0) + 1;
+    keyData.last_used = timeStr || new Date().toLocaleTimeString();
+    keyData.model = modelName;
+
+    if (!keyData.models || typeof keyData.models !== 'object') {
+        keyData.models = {};
+    }
+    keyData.models[modelName] = (keyData.models[modelName] || 0) + 1;
 
     lastUsedMeta = {
         key_id: keyId,
-        time: usageState.days[todayStr][keyId].last_used
+        time: keyData.last_used
     };
 
     saveUsageData();
@@ -147,8 +173,10 @@ function renderUsageTracker() {
         return;
     }
 
+    const defaultModels = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest'];
+
     keysToDisplay.forEach(keyId => {
-        const keyInfo = dayData[keyId] || { used: 0, last_used: '', model: '' };
+        const keyInfo = dayData[keyId] || { used: 0, last_used: '', model: '', models: {} };
         const usedCount = keyInfo.used || 0;
         const keyLimit = (usageState.key_limits && usageState.key_limits[keyId]) || usageState.daily_limit || DEFAULT_DAILY_LIMIT;
         const remaining = Math.max(keyLimit - usedCount, 0);
@@ -157,21 +185,6 @@ function renderUsageTracker() {
         // Derive Last Active Model strictly from actual request execution provenance (not health matrix)
         const lastActiveModel = keyInfo.model || (usageState.key_last_models && usageState.key_last_models[keyId]) || 'gemini-flash-latest';
 
-        // Safe health status lookup in nested model-level health object
-        let healthStatusStr = 'WORKING';
-        if (window.latestHealthStatus && window.latestHealthStatus[keyId]) {
-            const keyHealthObj = window.latestHealthStatus[keyId];
-            if (lastActiveModel && keyHealthObj[lastActiveModel]) {
-                healthStatusStr = keyHealthObj[lastActiveModel].status || 'WORKING';
-            } else {
-                const firstModelKey = Object.keys(keyHealthObj)[0];
-                if (firstModelKey && keyHealthObj[firstModelKey]) {
-                    healthStatusStr = keyHealthObj[firstModelKey].status || 'WORKING';
-                }
-            }
-        }
-        const statusBadgeClass = healthStatusStr.toLowerCase();
-
         const isLastUsed = (lastUsedMeta.key_id === keyId && selectedDate === todayStr);
 
         const card = document.createElement('div');
@@ -179,28 +192,76 @@ function renderUsageTracker() {
 
         const shortKeyId = keyId.length > 32 ? keyId.substring(0, 30) + '...' : keyId;
 
+        // Model-wise breakdown row generation
+        const modelsMap = keyInfo.models || {};
+        const modelSet = new Set([...defaultModels, ...Object.keys(modelsMap)]);
+        const modelsToDisplay = Array.from(modelSet);
+
+        let modelRowsHtml = '';
+        modelsToDisplay.forEach(modelName => {
+            const reqCount = modelsMap[modelName] || 0;
+            const pctNum = usedCount > 0 ? (reqCount / usedCount) * 100 : 0;
+            const pctStr = usedCount > 0 ? (pctNum % 1 === 0 ? pctNum.toFixed(0) + '%' : pctNum.toFixed(1) + '%') : '0%';
+
+            modelRowsHtml += `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                    <td style="padding: 6px 8px; font-family: 'JetBrains Mono', monospace; color: #60a5fa; font-size: 11px;">
+                        ${escapeHtml(modelName)}
+                    </td>
+                    <td style="padding: 6px 8px; text-align: center; font-weight: 700; color: #f1f5f9; font-size: 11px;">
+                        ${reqCount}
+                    </td>
+                    <td style="padding: 6px 8px; text-align: right; font-size: 11px; color: #94a3b8;">
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
+                            <span>${pctStr}</span>
+                            <div style="width: 44px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; flex-shrink: 0;">
+                                <div style="width: ${pctNum}%; height: 100%; background: linear-gradient(90deg, #6366f1, #818cf8);"></div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
         card.innerHTML = `
             <div class="usage-key-header">
                 <div class="usage-key-title">
-                    <span class="usage-key-id" title="${escapeHtml(keyId)}">${escapeHtml(shortKeyId)}</span>
-                    ${isLastUsed ? `<span class="usage-last-used-tag">● LAST ACTIVE: ${escapeHtml(lastUsedMeta.time || keyInfo.last_used)}</span>` : ''}
+                    🔑 <span class="usage-key-id" title="${escapeHtml(keyId)}">${escapeHtml(shortKeyId)}</span>
+                    ${isLastUsed ? `<span class="usage-last-used-tag" style="margin-left:8px; font-size:10px; color:#34d399; font-weight:700;">● LAST ACTIVE: ${escapeHtml(lastUsedMeta.time || keyInfo.last_used)}</span>` : ''}
                 </div>
-                <div class="usage-key-sub">
-                    Last Active Model: <b class="model-highlight">${escapeHtml(lastActiveModel)}</b>
+                <div class="usage-key-sub" style="font-size: 11px; color: #64748b;">
+                    Last Active Model: <b class="model-highlight" style="color: #cbd5e1;">${escapeHtml(lastActiveModel)}</b>
                 </div>
             </div>
-            <div class="usage-key-body">
-
-                <div class="usage-metrics-row">
-                    <div>Used Today: <b>${usedCount} / ${keyLimit}</b></div>
-                    <div>Remaining (configured limit): <b class="remaining-highlight">${remaining}</b></div>
+            <div class="usage-key-body" style="display:flex; flex-direction:column; gap:8px;">
+                <div class="usage-metrics-row" style="display:flex; justify-content:space-between; font-size:12px; color:#cbd5e1;">
+                    <div>Total Usage: <b>${usedCount} / ${keyLimit}</b></div>
+                    <div>Remaining: <b class="remaining-highlight" style="color:#34d399;">${remaining}</b></div>
                 </div>
-                <div class="usage-progress-bg" style="margin-top: 0.5rem; margin-bottom: 0.25rem;">
+                <div class="usage-progress-bg" style="margin-top: 0.25rem; margin-bottom: 0.25rem;">
                     <div class="usage-progress-fill ${percent >= 80 ? 'high' : ''}" style="width: ${percent}%;"></div>
                 </div>
-                <div class="usage-progress-footer">
+                <div class="usage-progress-footer" style="display:flex; justify-content:space-between; font-size:11px; color:#64748b; margin-bottom: 0.5rem;">
                     <span>${percent}% Used</span>
                     <span>${keyInfo.last_used ? 'Last activity: ' + escapeHtml(keyInfo.last_used) : 'No activity today'}</span>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.25); border: 1px solid #141b2a; border-radius: 6px; padding: 10px; margin-top: 4px;">
+                    <div style="font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.05em; margin-bottom: 6px; text-transform: uppercase;">
+                        MODEL USAGE BREAKDOWN
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid #1e293b; color: #475569; text-transform: uppercase; font-size: 10px;">
+                                <th style="padding: 4px 8px; text-align: left;">MODEL</th>
+                                <th style="padding: 4px 8px; text-align: center;">REQUESTS</th>
+                                <th style="padding: 4px 8px; text-align: right;">% OF KEY USAGE</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${modelRowsHtml}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         `;
