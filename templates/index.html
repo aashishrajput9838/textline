@@ -283,6 +283,27 @@
             white-space: pre-wrap;
             word-break: break-word;
             display: none;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .answer-text::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .answer-text::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+
+        .answer-text::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.5);
+            border-radius: 4px;
+        }
+
+        .answer-text::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.8);
         }
 
         .copy-btn {
