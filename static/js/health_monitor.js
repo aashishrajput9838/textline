@@ -119,8 +119,8 @@ function handleKeyHealthResults(data) {
                 const statusClass = (item.status || 'error').toLowerCase();
                 
                 tr.innerHTML = `
-                    <td class="key-id-cell" title="${escapeHtml(item.key_id)}" style="padding-left: 1.5rem; color: var(--text-muted);">
-                        └ ${escapeHtml(shortKeyId)}
+                    <td class="key-id-cell" style="padding-left: 1.5rem; color: #475569;">
+                        └
                     </td>
                     <td><b style="font-family:'JetBrains Mono',monospace; color:#60a5fa;">${escapeHtml(item.model)}</b></td>
                     <td><span class="badge-status ${statusClass}">${escapeHtml(item.status)}</span></td>
