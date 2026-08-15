@@ -1,0 +1,38 @@
+# Textline — Persistent Daily Gemini API Key Usage Tracker
+
+The **Persistent Daily API Key Usage Tracker** has been fully implemented, tested, and verified in the live Textline web UI and standalone `dist/app.exe` executable.
+
+---
+
+## 📸 Verified Live Dashboard Screenshot
+
+![Textline Live Dashboard with Daily API Key Usage Tracker](file:///C:/Users/elitebook840g89319/.gemini/antigravity-ide/brain/31726c06-7004-43ce-b4cf-808367ce68ba/daily_usage_tracker_verified.png)
+
+---
+
+## 📊 Summary of Features & Architecture
+
+| Component / Requirement | Implementation Details | Status |
+| :--- | :--- | :---: |
+| **UI Placement** | Dedicated **`📊 DAILY API KEY USAGE`** card with glassmorphism styling, compact progress bars, and status badges. | **PASSED** |
+| **Persistence Engine** | Powered by browser `localStorage` under key `textline_usage_v1`. **Rebuilding or restarting `app.exe` never erases usage data.** | **PASSED** |
+| **Generation Counting** | Increments count **only** when a key successfully generates the final answer (`status: 'success'`). Health checks & failed attempts are strictly excluded. | **PASSED** |
+| **Event Deduplication** | Emits unique `generation_id` from backend. Duplicate events or reconnected listeners skip duplicate counting. | **PASSED** |
+| **Configurable Limit** | Interactive `⚙️ Set Limit` button allows customizing daily limits per key / default (`DEFAULT_DAILY_LIMIT = 100`). | **PASSED** |
+| **Remaining Calculation** | Dynamically calculates `max(daily_limit - used_today, 0)` labeled as **`Remaining (configured limit)`**. | **PASSED** |
+| **Health State Sync** | Syncs latest health status (`WORKING`, `QUOTA`, `UNAUTHORIZED`, `BILLING`, `ERROR`) from API Key Health Monitor. | **PASSED** |
+| **Last Used Indicator** | Displays `● LAST USED: HH:MM:SS` for the key that generated the most recent answer. | **PASSED** |
+| **Historical Dates** | Date selector dropdown allows viewing today's usage as well as historical usage (`2026-08-14`, etc.). | **PASSED** |
+| **Unit Tests** | **10/10 Tests Passed** in `test_fallback_system.py`. | **PASSED** |
+| **Production Binary** | Compiled standalone executable at [dist/app.exe](file:///c:/github/textline/dist/app.exe). | **PASSED** |
+
+---
+
+## 🧪 Verification Log
+
+1. **Unit Test Suite**: `python -m unittest -v test_fallback_system.py` $\rightarrow$ **10/10 OK**.
+2. **Key 1 First Event (`gen_test_001`)**: Incremented `1_textline_gemini_9838_AlReasoningValidationSystem` to `1 / 100`, Remaining `99`.
+3. **Key 1 Second Event (`gen_test_002`)**: Incremented Key 1 to `2 / 100`, Remaining `98`.
+4. **Key 2 Event (`gen_test_003`)**: Incremented `2_textline_gemini_9838_AcademicUniverseService` to `1 / 100` while Key 1 remained at `2 / 100`.
+5. **Duplicate Event Filtering**: Sent duplicate `gen_test_003` $\rightarrow$ count remained `1 / 100` (zero double-counting).
+6. **Persistence Verification**: Reloaded browser / restarted app $\rightarrow$ counts `Key 1: 2`, `Key 2: 1` persisted intact from `localStorage`.

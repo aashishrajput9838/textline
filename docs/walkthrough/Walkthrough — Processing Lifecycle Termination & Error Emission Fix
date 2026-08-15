@@ -1,0 +1,54 @@
+# Walkthrough — Processing Lifecycle Termination & Error Emission Fix
+
+## 1. Root Cause Analysis
+
+### Identified Bug
+In [`app.py`](file:///c:/github/textline/app.py), when all Gemini keys and models (and optional OpenAI fallback) were exhausted or unavailable, `generate_content_with_fallback()` raised a `RuntimeError`.
+
+Inside `monitor_clipboard()`:
+1. `socketio.emit('status_update', {'status': 'processing', ...})` was emitted when a new screenshot was detected.
+2. If `generate_content_with_fallback()` failed or if an unhandled exception occurred in PIL conversion, image hashing, or post-processing:
+   - Duplicate `except` blocks or unhandled outer exceptions could cause execution to bypass emitting a terminal Socket.IO `status_update` event.
+   - The UI remained stuck in `PROCESSING` indefinitely.
+
+---
+
+## 2. Changes Implemented
+
+### Files Changed
+1. **[`app.py`](file:///c:/github/textline/app.py)** (lines 460–495):
+   - Introduced explicit `processing_active` flag in `monitor_clipboard()`.
+   - Guaranteed that any exception occurring during screenshot processing immediately emits a terminal Socket.IO event:
+     ```python
+     socketio.emit('status_update', {
+         'status': 'error',
+         'message': error_msg,
+         'timestamp': time.strftime("%H:%M:%S")
+     })
+     ```
+   - Guaranteed that every screenshot operation terminates in either `PROCESSING -> SUCCESS` or `PROCESSING -> ERROR`.
+   - Ensured structured failure messages (e.g. `QUOTA_EXHAUSTED` / `MODEL_UNAVAILABLE` details) are preserved and delivered to the UI.
+
+2. **[`test_fallback_system.py`](file:///c:/github/textline/test_fallback_system.py)**:
+   - Added **Test 36** (`test_36_processing_all_providers_exhausted_emits_terminal_error`) asserting that when all key/model combinations are exhausted and fallbacks fail:
+     - The exception raises a structured error message (`AI Generation Error`).
+     - `PROCESSING` transitions to terminal `ERROR`.
+     - Successful-output counters are NOT incremented for the failed generation.
+
+---
+
+## 3. Test Suite & Rebuild Results
+
+### Unit Test Suite Results
+Ran full unit test suite (`python -m unittest test_fallback_system.py`):
+```text
+RESULTS -> FAILURES: 0, ERRORS: 0, TOTAL: 37
+```
+All **37/37 tests passed** cleanly.
+
+### Standalone Executable Rebuild
+Recompiled standalone executable via PyInstaller (`python -m PyInstaller app.spec --clean`):
+```text
+Build complete! The results are available in: C:\github\textline\dist\app.exe
+```
+The executable compiled with zero errors.

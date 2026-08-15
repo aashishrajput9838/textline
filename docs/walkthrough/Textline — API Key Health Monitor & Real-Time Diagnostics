@@ -1,0 +1,49 @@
+# Textline — API Key Health Monitor & Real-Time Diagnostics
+
+Implemented and verified the **API Key Health Monitor** feature in Textline. Users can now independently test every configured `GEMINI_API_KEY_*` credential from `.env` in parallel without allowing one valid key to mask failures of other keys.
+
+---
+
+## 📸 Verified UI Dashboard Screenshot
+
+![Textline Live Dashboard with API Key Health Monitor Table](file:///C:/Users/elitebook840g89319/.gemini/antigravity-ide/brain/31726c06-7004-43ce-b4cf-808367ce68ba/api_key_health_table_verified.png)
+
+---
+
+## 📊 Live API Key Diagnostic Scan Results
+
+Each key was independently tested against `gemini-flash-latest` using a minimal authenticated request.
+
+| Key Identifier | Model Tested | Status | Round-Trip Latency | HTTP / Error Classification |
+| :--- | :--- | :--- | :--- | :--- |
+| **98381** | `gemini-flash-latest` | <span style="color:#34d399;font-weight:bold;">WORKING</span> | 1601ms | `PASS` |
+| **98382** | `gemini-flash-latest` | <span style="color:#34d399;font-weight:bold;">WORKING</span> | 1760ms | `PASS` |
+| **98383** | `gemini-flash-latest` | <span style="color:#f87171;font-weight:bold;">UNAUTHORIZED</span> | 719ms | `403 Access Restricted / Denied` |
+| **98385** | `gemini-flash-latest` | <span style="color:#f87171;font-weight:bold;">UNAUTHORIZED</span> | 817ms | `403 Access Restricted / Denied` |
+| **98386** | `gemini-flash-latest` | <span style="color:#34d399;font-weight:bold;">WORKING</span> | 1631ms | `PASS` |
+| **98387** | `gemini-flash-latest` | <span style="color:#f87171;font-weight:bold;">UNAUTHORIZED</span> | 865ms | `403 Access Restricted / Denied` |
+| **98388** | `gemini-flash-latest` | <span style="color:#f87171;font-weight:bold;">UNAUTHORIZED</span> | 638ms | `403 Access Restricted / Denied` |
+| **98389** | `gemini-flash-latest` | <span style="color:#f87171;font-weight:bold;">UNAUTHORIZED</span> | 834ms | `403 Access Restricted / Denied` |
+| **983810** | `gemini-flash-latest` | <span style="color:#f87171;font-weight:bold;">UNAUTHORIZED</span> | 881ms | `403 Access Restricted / Denied` |
+| **aspirinexar** | `gemini-flash-latest` | <span style="color:#34d399;font-weight:bold;">WORKING</span> | 1935ms | `PASS` |
+
+---
+
+## 🛠️ Feature & Architecture Highlights
+
+1. **Dynamic Key Discovery ([app.py](file:///c:/github/textline/app.py))**:
+   - Automatically discovers every `GEMINI_API_KEY_*` variable defined in `.env` and `API_KEYS_MAP`.
+   - Extracts safe key identifiers (`98381`, `aspirinexar`, etc.) for clean display.
+
+2. **Per-Key Independent Diagnostics**:
+   - Measures exact round-trip latency (`latency_ms`).
+   - Categorizes failures into sanitized error classifications (`Working`, `Quota`, `Unauthorized`, `Billing`, `Failed`, `Error`).
+   - **Security**: Raw API key secrets are never exposed in DOM, logs, or WebSocket payloads.
+
+3. **Frontend Dashboard Components ([templates/index.html](file:///c:/github/textline/templates/index.html))**:
+   - Added **`🧪 Test All API Keys`** gradient button.
+   - Interactive diagnostic results table with color-coded status badges (`WORKING`, `UNAUTHORIZED`, `QUOTA`).
+   - REST API endpoint (`/api/test-keys`) and WebSocket event (`run_key_health_check`).
+
+4. **Executable Build**:
+   - Standalone `dist/app.exe` built with PyInstaller and verified live in browser.

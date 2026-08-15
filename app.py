@@ -6,8 +6,13 @@ import io
 import base64
 import hashlib
 import threading
+import functools
 from PIL import Image, ImageGrab
 import pyperclip
+
+from utils.logging import safe_print, builtins_print
+print = safe_print
+
 from google import genai
 try:
     import openai
@@ -30,506 +35,62 @@ if getattr(sys, 'frozen', False):
     except ImportError:
         pass
 else:
-    template_dir = 'templates'
+    template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
 
-# Initialize Flask App & SocketIO
-app = Flask(__name__, template_folder=template_dir)
-app.config['SECRET_KEY'] = 'clipboard_gemini_secret_key'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading", ping_timeout=60, ping_interval=25)
+from server.flask_app import create_app, test_key_model_diagnostic, run_all_keys_health_check
+from server.socket_events import register_socket_events
 
-# Structured dynamic mapping of custom key IDs / aliases to actual Gemini API keys
-def load_api_keys_map():
-    keys_map = {}
-    default_key = os.environ.get("GEMINI_API_KEY")
-    if default_key and default_key.strip():
-        keys_map["default"] = default_key
-        
-    for env_var, env_val in os.environ.items():
-        if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
-            raw_key_id = env_var[15:]
-            if raw_key_id.lower() in ("1_textline_gemini_9838_alreasoningvalidationsystem", "textline_gemini_9838_alreasoningvalidationsystem"):
-                canonical_id = "1_textline_gemini_9838_AlReasoningValidationSystem"
-            elif raw_key_id.lower() in ("2_textline_gemini_9838_academicuniverseservice", "textline_gemini_9838_academicuniverseservice"):
-                canonical_id = "2_textline_gemini_9838_AcademicUniverseService"
-            else:
-                canonical_id = raw_key_id
+app, socketio = create_app()
+register_socket_events(socketio)
 
-            if canonical_id.lower() not in [k.lower() for k in keys_map]:
-                keys_map[canonical_id] = env_val
-    return keys_map
 
-API_KEYS_MAP = load_api_keys_map()
+from config.settings import load_api_keys_map, API_KEYS_MAP, OPENAI_API_KEY
+from config.constants import DEFAULT_GEMINI_MODELS, SUPPORTED_HEALTH_MODELS, PROJECT_METADATA_MAP
+from utils.timing import generate_pipeline_id
+from ai.health_registry import (
+    KEY_MODEL_HEALTH_REGISTRY,
+    set_socketio as set_health_socketio,
+    classify_error_code_and_status,
+    update_key_model_health,
+    get_key_model_status,
+    is_key_model_known_unavailable
+)
+from ai.key_manager import discover_all_gemini_keys
+from ai.model_manager import get_available_gemini_models
+from ai.openai import generate_content_openai_fallback
+from ai.gemini import generate_content_with_fallback
+from pipeline.logger import emit_pipeline_log, set_socketio as set_logger_socketio
+from pipeline.errors import NoAvailableModelError, PipelineTimeoutError
 
-# OpenAI Backup Provider Configuration
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
+set_health_socketio(socketio)
+set_logger_socketio(socketio)
 
-# Default active Gemini models list for google-genai SDK
-DEFAULT_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
 
-def get_available_gemini_models(client):
-    """Dynamically discover active generateContent models for a given client key."""
-    try:
-        discovered = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
-        for m in client.models.list():
-            m_name = getattr(m, 'name', '') or str(m)
-            if 'gemini' in m_name.lower():
-                clean_name = m_name.replace('models/', '')
-                if clean_name not in discovered and "1.5" not in clean_name and "2.5-pro" not in clean_name and "experimental" not in clean_name:
-                    discovered.append(clean_name)
-        if discovered:
-            return discovered
-    except Exception:
-        pass
-    return DEFAULT_GEMINI_MODELS
 
-def generate_content_openai_fallback(prompt, base64_image_url):
-    """Backup Vision content generator using OpenAI gpt-4o-mini (Graceful Fail)."""
-    if not openai:
-        print("[!] OpenAI fallback skipped: 'openai' Python package is not installed.")
-        return None
-    if not OPENAI_API_KEY or OPENAI_API_KEY in ("YOUR_OPENAI_API_KEY", ""):
-        print("[!] OpenAI fallback skipped: API key not found / not configured in .env.")
-        return None
+from processing.formatter import format_clipboard_output
+from image.validator import validate_image
+from image.converter import convert_to_rgb, image_to_png_bytes, image_to_base64_url
+from image.preview import build_image_preview_payload
+from clipboard.reader import read_clipboard_image
+from clipboard.writer import write_to_clipboard
+from clipboard.hasher import compute_image_hash
+from clipboard.monitor import ClipboardMonitor, monitor_clipboard
+from pipeline.stages import PipelineStage
+from pipeline.pipeline import ScreenshotPipeline, set_pipeline_socketio
 
-    try:
-        print("[*] Attempting OpenAI fallback (gpt-4o-mini)...")
-        client_oai = openai.OpenAI(api_key=OPENAI_API_KEY)
-        response = client_oai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": base64_image_url
-                            }
-                        }
-                    ]
-                }
-            ]
-        )
-        if response and response.choices and len(response.choices) > 0:
-            return response.choices[0].message.content
-    except Exception as oai_err:
-        print(f"[!] OpenAI Fallback Error: {oai_err}")
-    return None
+set_pipeline_socketio(socketio)
 
-# Project Metadata Mapping (associates safe key IDs to separate project metadata)
-PROJECT_METADATA_MAP = {
-    "1_textline_gemini_9838_AlReasoningValidationSystem": {
-        "project_number": "333673007466",
-        "project_name": "textline_gemini_9838_AlReasoningValidationSystem"
-    },
-    "2_textline_gemini_9838_AcademicUniverseService": {
-        "project_number": "500719954463",
-        "project_name": "textline_gemini_9838_AcademicUniverseService"
-    }
-}
 
-def generate_content_with_fallback(contents, base64_image_url=None):
-    """
-    Executes content generation using structured Gemini key IDs.
-    Fail-Fast: Skips invalid/dummy/unauthorized keys immediately on first error.
-    If ALL Gemini keys fail, gracefully attempts OpenAI (gpt-4o-mini).
-    Returns tuple: (raw_answer_text, metadata_dict).
-    """
-    errors = []
-    attempt_count = 0
+# Note: discover_all_gemini_keys imported from ai.key_manager
 
-    valid_keys = {key_id: key_val for key_id, key_val in API_KEYS_MAP.items() if key_val and key_val != "YOUR_GEMINI_API_KEY"}
-    
-    if not valid_keys:
-        gen_key = os.environ.get("GEMINI_API_KEY", "")
-        if gen_key:
-            valid_keys["DEFAULT"] = gen_key
 
-    initial_key_id = None
-    initial_model = None
-    last_attempt_key_id = ""
-    last_attempt_model = ""
+# Note: test_key_model_diagnostic, run_all_keys_health_check, routes, socket handlers imported from server package
 
-    # 1. Attempt Gemini multi-key rotation with dynamic model discovery
-    for key_id, api_key in valid_keys.items():
-        try:
-            client = genai.Client(api_key=api_key)
-        except Exception as client_err:
-            print(f"[!] Failed to initialize Gemini client for Key ID [{key_id}]: {client_err}")
-            errors.append(f"Key [{key_id}]: {client_err}")
-            continue
-
-        models_to_query = get_available_gemini_models(client)
-        skip_key = False
-        
-        for model_name in models_to_query:
-            if skip_key:
-                break
-            if "2.5-pro" in model_name:
-                continue
-
-            if initial_key_id is None:
-                initial_key_id = key_id
-                initial_model = model_name
-
-            max_retries = 2
-            for retry_idx in range(max_retries + 1):
-                attempt_count += 1
-                try:
-                    print(f"[*] Trying Gemini Key ID [{key_id}] with model '{model_name}' (Attempt {retry_idx + 1})...")
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=contents
-                    )
-                    if response and response.text:
-                        print(f"[+] Success using Gemini Key ID [{key_id}] ({model_name})")
-                        model_fallback = (model_name != initial_model)
-                        key_fallback = (key_id != initial_key_id)
-                        is_fallback = model_fallback or key_fallback
-                        meta = {
-                            "provider": "Google Gemini",
-                            "model": model_name,
-                            "key_id": key_id,
-                            "project_number": PROJECT_METADATA_MAP.get(key_id, {}).get("project_number", ""),
-                            "is_fallback": is_fallback,
-                            "model_fallback": model_fallback,
-                            "key_fallback": key_fallback,
-                            "attempt_count": attempt_count,
-                            "previous_model": last_attempt_model,
-                            "previous_key_id": last_attempt_key_id,
-                            "generation_id": f"gen_{int(time.time() * 1000)}"
-                        }
-                        return response.text, meta
-                except Exception as e:
-                    last_attempt_key_id = key_id
-                    last_attempt_model = model_name
-                    err_str = str(e)
-                    short_err = err_str.split("\n")[0] if "\n" in err_str else err_str
-                    print(f"[!] Gemini Key ID [{key_id}] ({model_name}) failed: {short_err}")
-                    errors.append(f"Key [{key_id}] [{model_name}]: {short_err}")
-                    
-                    # 503 High Demand Spikes: Retry up to max_retries before moving to next model
-                    if any(kw in err_str for kw in ["503", "UNAVAILABLE", "high demand"]):
-                        if retry_idx < max_retries:
-                            wait_sec = 1.5 * (retry_idx + 1)
-                            print(f"[!] 503 High Demand spike for Key ID [{key_id}] ({model_name}). Retrying in {wait_sec}s...")
-                            time.sleep(wait_sec)
-                            continue
-
-                    # Fail-Fast: If key is invalid, unauthenticated, forbidden, or model not found/available, skip key immediately
-                    if any(bad_kw in err_str for bad_kw in [
-                        "400", "403", "404", "INVALID_ARGUMENT", "PERMISSION_DENIED", 
-                        "NOT_FOUND", "API key not valid", "not available to new users"
-                    ]):
-                        print(f"[!] Key ID [{key_id}] is invalid, restricted, or lacks model access. Skipping key...")
-                        skip_key = True
-                        break
-                    
-                    # If 429 quota exhausted on this model, try next model or next key
-                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        print(f"[!] 429 Quota Limit reached for Key ID [{key_id}] on {model_name}. Trying next model/key...")
-                        break
-
-    # 2. Graceful Fallback to OpenAI gpt-4o-mini if configured
-    if base64_image_url:
-        attempt_count += 1
-        prompt_str = contents[0] if isinstance(contents, list) and len(contents) > 0 else str(contents)
-        openai_result = generate_content_openai_fallback(prompt_str, base64_image_url)
-        if openai_result:
-            print("[+] Success using OpenAI (gpt-4o-mini) fallback!")
-            meta = {
-                "provider": "OpenAI",
-                "model": "gpt-4o-mini",
-                "key_id": "OPENAI",
-                "is_fallback": True,
-                "model_fallback": True,
-                "key_fallback": True,
-                "attempt_count": attempt_count,
-                "previous_model": last_attempt_model,
-                "previous_key_id": last_attempt_key_id,
-                "generation_id": f"gen_{int(time.time() * 1000)}"
-            }
-            return openai_result, meta
-
-    # Construct smart, non-misleading error summary
-    all_err_text = " ".join(errors)
-    if "503" in all_err_text or "UNAVAILABLE" in all_err_text or "high demand" in all_err_text.lower():
-        summary_msg = "Gemini temporarily unavailable — Google is currently reporting high demand. Retrying..."
-    elif "429" in all_err_text or "RESOURCE_EXHAUSTED" in all_err_text:
-        summary_msg = "All Gemini API keys have reached daily quota limits (RESOURCE_EXHAUSTED). Please check back later or add another key."
-    elif "403" in all_err_text or "400" in all_err_text or "PERMISSION_DENIED" in all_err_text:
-        summary_msg = "Gemini API key authorization failed. Please check your .env configuration."
-    else:
-        summary_msg = "All Gemini API keys & fallbacks failed."
-
-    raise RuntimeError(f"AI Generation Error: {summary_msg}\n\nDetails:\n" + "\n".join(errors))
-
-def format_clipboard_output(raw_answer):
-    """Enforces Python Post-Processing Padding (50 single-spaced lines + terminating dot)."""
-    clean_code = raw_answer.lstrip() if raw_answer else "No text returned from model."
-    return clean_code + "\n" + "\n".join([" "] * 50) + "\n."
-
-def monitor_clipboard():
-    """Background thread function to monitor system clipboard for new images."""
-    last_image_hash = None
-    print("[*] Clipboard monitoring thread started.")
-
-    while True:
-        try:
-            # Grab image object from Windows clipboard
-            clipboard_content = ImageGrab.grabclipboard()
-
-            if isinstance(clipboard_content, Image.Image):
-                # Convert PIL Image to PNG bytes
-                img_byte_arr = io.BytesIO()
-                # Handle RGBA / Palette mode conversions if needed when saving as PNG
-                if clipboard_content.mode in ("RGBA", "P"):
-                    clipboard_content = clipboard_content.convert("RGB")
-                clipboard_content.save(img_byte_arr, format='PNG')
-                img_bytes = img_byte_arr.getvalue()
-
-                # Calculate hash to verify if image is NEW
-                current_hash = hashlib.sha256(img_bytes).hexdigest()
-
-                if current_hash != last_image_hash:
-                    last_image_hash = current_hash
-
-                    # Convert image bytes to Base64 data URL for UI rendering
-                    base64_img = base64.b64encode(img_bytes).decode('utf-8')
-                    image_data_url = f"data:image/png;base64,{base64_img}"
-
-                    # 1. Notify frontend: New screenshot detected
-                    socketio.emit('status_update', {
-                        'status': 'processing',
-                        'message': 'New screenshot detected! Processing...',
-                        'timestamp': time.strftime("%H:%M:%S")
-                    })
-
-                    # 2. Emit Base64 image to frontend for live UI preview
-                    socketio.emit('image_preview', {
-                        'image_url': image_data_url
-                    })
-
-                    # 3. Pure, clean text instructions system prompt
-                    prompt = "give me complete code in the given language,\nmake sure -\n1. my code should be very fast in terms of speed.\n2. remove any spaces from the starting of each line in the code.\n\nMost important -- I don't need any explanation or any other content, not even a single irrelevant word. The output should be only the code."
-                    
-                    try:
-                        raw_answer, meta = generate_content_with_fallback([prompt, clipboard_content], base64_image_url=image_data_url)
-                        final_clipboard_text = format_clipboard_output(raw_answer)
-                        
-                        # Auto-copy final formatted text to Windows clipboard
-                        pyperclip.copy(final_clipboard_text)
-
-                        # 5. Emit final answer and Done status to frontend with metadata provenance
-                        socketio.emit('status_update', {
-                            'status': 'success',
-                            'message': 'Done! Answer copied to clipboard.',
-                            'answer': final_clipboard_text,
-                            'timestamp': time.strftime("%H:%M:%S"),
-                            'metadata': meta
-                        })
-                    except Exception as api_err:
-                        error_msg = f"AI Generation Error: {str(api_err)}"
-                        print(f"[!] {error_msg}")
-                        socketio.emit('status_update', {
-                            'status': 'error',
-                            'message': error_msg,
-                            'timestamp': time.strftime("%H:%M:%S")
-                        })
-                    except Exception as api_err:
-                        error_msg = f"AI Generation Error: {str(api_err)}"
-                        print(f"[!] {error_msg}")
-                        socketio.emit('status_update', {
-                            'status': 'error',
-                            'message': error_msg,
-                            'timestamp': time.strftime("%H:%M:%S")
-                        })
-        except Exception as e:
-            print(f"[!] Clipboard monitor exception: {e}")
-
-        time.sleep(1)
-
-def discover_all_gemini_keys():
-    """Dynamically discovers all GEMINI_API_KEY_* environment variables from .env and API_KEYS_MAP,
-    deduplicating key identifiers case-insensitively while preserving canonical casing for the first seen key ID.
-    """
-    discovered_keys = {}
-    seen_normalized = set()
-    
-    # 1. First add all structured keys from API_KEYS_MAP
-    for k_id, k_val in API_KEYS_MAP.items():
-        if k_val and k_val.strip() and k_val != "YOUR_GEMINI_API_KEY":
-            normalized_id = k_id.lower()
-            if normalized_id not in seen_normalized:
-                seen_normalized.add(normalized_id)
-                discovered_keys[k_id] = k_val
-
-    # 2. Check os.environ for any additional GEMINI_API_KEY_* variables
-    for env_var, env_val in os.environ.items():
-        if env_var.upper().startswith("GEMINI_API_KEY_") and env_val and env_val.strip():
-            raw_key_id = env_var[15:]
-            if raw_key_id.lower() in ("1_textline_gemini_9838_alreasoningvalidationsystem", "textline_gemini_9838_alreasoningvalidationsystem"):
-                canonical_id = "1_textline_gemini_9838_AlReasoningValidationSystem"
-            elif raw_key_id.lower() in ("2_textline_gemini_9838_academicuniverseservice", "textline_gemini_9838_academicuniverseservice"):
-                canonical_id = "2_textline_gemini_9838_AcademicUniverseService"
-            else:
-                canonical_id = raw_key_id
-
-            normalized_id = canonical_id.lower()
-            if normalized_id not in seen_normalized:
-                seen_normalized.add(normalized_id)
-                discovered_keys[canonical_id] = env_val
-
-    return discovered_keys
-
-def test_single_key_diagnostic(key_id, api_key):
-    """Tests a single Gemini API key independently against available models and measures latency."""
-    if not api_key or not api_key.strip() or api_key == "YOUR_GEMINI_API_KEY":
-        return {
-            "key_id": key_id,
-            "model": "gemini-2.5-flash",
-            "status": "Error",
-            "latency_ms": 0,
-            "http_code": 400,
-            "details": "Not Configured in .env"
-        }
-
-    start_time = time.time()
-    last_err_details = {}
-    models_to_test = ["gemini-2.5-flash", "gemini-flash-latest"]
-    
-    try:
-        client = genai.Client(api_key=api_key)
-    except Exception as client_init_err:
-        return {
-            "key_id": key_id,
-            "model": "gemini-2.5-flash",
-            "status": "Failed",
-            "latency_ms": int((time.time() - start_time) * 1000),
-            "http_code": 400,
-            "details": f"Client Init Failed: {str(client_init_err)[:50]}"
-        }
-
-    for model_name in models_to_test:
-        model_start = time.time()
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents="Hi"
-            )
-            latency = int((time.time() - model_start) * 1000)
-            if response and response.text:
-                return {
-                    "key_id": key_id,
-                    "model": model_name,
-                    "status": "Working",
-                    "latency_ms": latency,
-                    "http_code": 200,
-                    "details": "PASS"
-                }
-        except Exception as e:
-            latency = int((time.time() - model_start) * 1000)
-            err_str = str(e)
-            
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                status = "Quota"
-                code = 429
-                details = "429 Quota Exhausted"
-            elif "403" in err_str or "PERMISSION_DENIED" in err_str:
-                status = "Unauthorized"
-                code = 403
-                details = "403 Access Restricted / Denied"
-            elif "404" in err_str or "NOT_FOUND" in err_str:
-                status = "Error"
-                code = 404
-                details = "404 Model Unavailable"
-            elif "503" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str.lower():
-                status = "SERVICE_UNAVAILABLE"
-                code = 503
-                details = "503 High Demand / Service Unavailable"
-            elif "BILLING" in err_str.upper() or "402" in err_str:
-                status = "Billing"
-                code = 402
-                details = "402 Billing Required"
-            elif "400" in err_str or "INVALID_ARGUMENT" in err_str:
-                status = "Failed"
-                code = 400
-                details = "400 Invalid Argument / Key"
-            else:
-                status = "Error"
-                code = 500
-                details = err_str.split("\n")[0][:60]
-
-            last_err_details = {
-                "key_id": key_id,
-                "model": model_name,
-                "status": status,
-                "latency_ms": latency,
-                "http_code": code,
-                "details": details
-            }
-
-    return last_err_details if last_err_details else {
-        "key_id": key_id,
-        "model": "gemini-2.5-flash",
-        "status": "Failed",
-        "latency_ms": int((time.time() - start_time) * 1000),
-        "http_code": 500,
-        "details": "All Model Tests Failed"
-    }
-
-def run_all_keys_health_check():
-    """Runs independent diagnostic scan across every discovered Gemini API key."""
-    all_keys = discover_all_gemini_keys()
-    results = []
-    
-    for key_id, api_key in all_keys.items():
-        res = test_single_key_diagnostic(key_id, api_key)
-        results.append(res)
-        
-    return results
-
-@app.route('/')
-def index():
-    """Render the main single-page dashboard."""
-    return render_template('index.html')
-
-@app.route('/api/test-keys')
-def api_test_keys():
-    """REST Endpoint to trigger independent diagnostic scan for all API keys."""
-    results = run_all_keys_health_check()
-    return jsonify({
-        'status': 'success',
-        'count': len(results),
-        'results': results
-    })
-
-@socketio.on('connect')
-def handle_connect():
-    """Triggered when a WebSocket client connects."""
-    emit('status_update', {
-        'status': 'idle',
-        'message': 'Connected to server. Monitoring clipboard for screenshots...',
-        'timestamp': time.strftime("%H:%M:%S")
-    })
-
-@socketio.on('run_key_health_check')
-def handle_run_key_health_check():
-    """WebSocket event handler to run key diagnostic scan asynchronously."""
-    emit('key_health_progress', {'status': 'scanning', 'message': 'Running diagnostic scan across all configured API keys...'})
-    results = run_all_keys_health_check()
-    emit('key_health_results', {
-        'status': 'success',
-        'count': len(results),
-        'results': results,
-        'timestamp': time.strftime("%H:%M:%S")
-    })
 
 def print_startup_health_check():
     """Prints server startup health check to terminal."""
@@ -537,7 +98,7 @@ def print_startup_health_check():
     has_openai = bool(OPENAI_API_KEY and OPENAI_API_KEY not in ("YOUR_OPENAI_API_KEY", ""))
     
     print("\n" + "=" * 55)
-    print("🚀 TEXTLINE MULTI-PROVIDER AI SERVER INITIALIZED")
+    print("=== TEXTLINE MULTI-PROVIDER AI SERVER INITIALIZED ===")
     print("=" * 55)
     print(f"[+] Gemini API Keys Loaded: {len(valid_gemini_keys)} key ID(s) ({', '.join(valid_gemini_keys)})")
     print(f"[+] OpenAI Vision Fallback:  {'Active (gpt-4o-mini)' if has_openai else 'Disabled (Key Not Configured)'}")

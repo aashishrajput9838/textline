@@ -1,0 +1,54 @@
+# Walkthrough — Immediate Fail-Fast & Terminal Error Delivery
+
+## 1. Summary of Requirements & Implemented Changes
+
+### Architecture Preservation & Fail-Fast Behavior
+- **Preserved Existing Architecture**: Gemini model-selection algorithm, per-key/per-model health registry, provenance calculation, fallback ordering, health matrix, and 503 retry backoff behavior were **100% preserved**.
+- **Immediate Failure on Exhaustion**: When all configured key/model combinations are known or determined to be unavailable (`QUOTA_EXHAUSTED`, `MODEL_UNAVAILABLE`, `UNAUTHORIZED`, `INVALID_ARGUMENT`), `generate_content_with_fallback()` raises `NoAvailableModelError` immediately with `error_code="NO_AVAILABLE_MODEL"`.
+- **Terminal Event Guarantee**: `monitor_clipboard()` emits a terminal Socket.IO `status_update` event:
+  ```json
+  {
+      "status": "error",
+      "message": "...",
+      "error_code": "NO_AVAILABLE_MODEL",
+      "timestamp": "HH:MM:SS"
+  }
+  ```
+- **UI & Processing State Clearing**:
+  - The UI receives `'status': 'error'`, clearing the active `PROCESSING` state badge to `ERROR` and returning to idle/error state.
+  - The captured screenshot (`previewImage`) **remains visible** on the screen.
+- **Accounting & Counter Invariants**:
+  - `successful_outputs` is **NOT incremented** on generation failure.
+  - Daily API request and failed attempt accounting in `KEY_MODEL_HEALTH_REGISTRY` and localStorage remain strictly consistent.
+
+---
+
+## 2. Code Changes
+
+1. **[`app.py`](file:///c:/github/textline/app.py)**:
+   - Defined `NoAvailableModelError(RuntimeError)` with `error_code="NO_AVAILABLE_MODEL"`.
+   - Updated `generate_content_with_fallback()` to raise `NoAvailableModelError` when no key/model combination can be used, formatting bullet points for each key as requested (`• gemini-2.5-flash -> QUOTA_EXHAUSTED`).
+   - Updated `monitor_clipboard()` to pass `error_code` inside the Socket.IO `status_update` payload.
+2. **[`templates/index.html`](file:///c:/github/textline/templates/index.html)**:
+   - Added `white-space: pre-wrap;` to `.status-message` for clean rendering of structured multi-line error lists.
+3. **[`test_fallback_system.py`](file:///c:/github/textline/test_fallback_system.py)**:
+   - Added **Test 38** (`test_38_immediate_fail_fast_when_all_keys_models_unavailable`) asserting fail-fast execution in under 1 second when cached health registry marks all keys/models as dead.
+   - Added **Test 39** (`test_39_mixed_429_404_key1_key2_exhaustion_emits_structured_error`) asserting 429/404 exhaustion across multiple keys emits `NoAvailableModelError` with `NO_AVAILABLE_MODEL` error code and formatted bullet point text.
+
+---
+
+## 3. Verification Results
+
+### Unit Test Suite
+Ran full test suite (`python -m unittest test_fallback_system.py`):
+```text
+RESULTS -> FAILURES: 0, ERRORS: 0, TOTAL: 40
+```
+All **40/40 tests passed** cleanly.
+
+### Executable Rebuild
+Recompiled standalone binary via PyInstaller (`python -m PyInstaller app.spec --clean`):
+```text
+Build complete! The results are available in: C:\github\textline\dist\app.exe
+```
+Executable compiled with zero errors.

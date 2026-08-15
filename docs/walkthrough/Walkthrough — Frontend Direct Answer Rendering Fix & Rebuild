@@ -1,0 +1,43 @@
+# Walkthrough — Frontend Direct Answer Rendering Fix & Rebuild
+
+## 1. Root Cause Identification
+
+### Identified Bug
+In [`templates/index.html`](file:///c:/github/textline/templates/index.html), a duplicated, malformed HTML fragment (`<div class="prov-item">...`) had been pasted directly inside the main `<script>` tag within the `addHistoryItem` JavaScript function.
+
+### Execution Path & Symptom
+1. When the browser loaded `index.html`, the JavaScript engine encountered HTML tags (`</div>`, `<div class="prov-item">`) inside the `<script>` block.
+2. This threw an unhandled JavaScript **`SyntaxError: Unexpected token '<'`**, aborting execution of the script.
+3. Because script initialization halted before registering or executing event listeners, when WebSocket emitted `status_update` with `data.answer` (containing `<!DOCTYPE html>...`):
+   - The `#answer-text` element remained hidden (`display: none`).
+   - The direct answer panel appeared visually blank/empty except for placeholder graphics.
+
+---
+
+## 2. Changes Implemented
+
+### Files Changed
+1. **[`templates/index.html`](file:///c:/github/textline/templates/index.html)**:
+   - Removed the malformed HTML snippet from inside the JavaScript function `addHistoryItem()`.
+   - Confirmed `#answer-text` uses `answerText.textContent = data.answer;` on `<pre id="answer-text">`, ensuring responses containing `<!DOCTYPE html>` or HTML/code source are safely rendered as plain text without live DOM execution.
+   - Added `overflow-y: auto` and `max-height: 400px` to `.answer-box` and `.answer-text` to ensure long responses and 50-line padding scroll cleanly.
+2. **[`test_fallback_system.py`](file:///c:/github/textline/test_fallback_system.py)**:
+   - Added **Test 34** (`test_34_doctype_html_rendering_and_clipboard_preservation`) specifically asserting that responses beginning with `<!DOCTYPE html>` format cleanly, preserve raw text, and bind properly to `answerText.textContent`.
+
+---
+
+## 3. Verification & Build Results
+
+### Unit Test Suite Results
+Ran full unit test suite (`python -m unittest test_fallback_system.py`):
+```text
+RESULTS -> FAILURES: 0, ERRORS: 0, TOTAL: 35
+```
+All **35/35 tests passed** cleanly.
+
+### Standalone Executable Rebuild
+Recompiled standalone binary via PyInstaller (`python -m PyInstaller app.spec --clean`):
+```text
+Build complete! The results are available in: C:\github\textline\dist\app.exe
+```
+The executable compiled with zero errors.

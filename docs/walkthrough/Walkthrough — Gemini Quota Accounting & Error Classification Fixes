@@ -1,0 +1,114 @@
+# Walkthrough — Gemini Quota Accounting & Error Classification Fixes
+
+All requested fixes for **Gemini Quota Accounting & Error Classification** have been implemented, unit tested, live verified in the browser, and compiled into [dist/app.exe](file:///c:/github/textline/dist/app.exe).
+
+---
+
+## 1. Problem 1 Fixed — Fine-Grained Error Classification & Non-Misleading Summary
+
+### Error Classification Engine
+Every model attempt is classified using exact HTTP status codes and standard strings:
+- `200` → `WORKING`
+- `400` → `INVALID_ARGUMENT`
+- `403` → `UNAUTHORIZED`
+- `404` → `MODEL_UNAVAILABLE`
+- `429` → `QUOTA_EXHAUSTED`
+- `500` → `INTERNAL_SERVER_ERROR`
+- `503` → `SERVICE_UNAVAILABLE`
+
+### Non-Misleading Error Summaries
+If a generation fails across all keys, Textline now NEVER claims `"All Gemini API keys have reached daily quota limits"` unless **every** key actually returned a `429 QUOTA_EXHAUSTED` error.
+
+When mixed failures occur (e.g. Key 1 returns 429 and Key 2 returns 404), Textline constructs an exact structured breakdown:
+```text
+Gemini generation unavailable.
+
+Key 1_textline_gemini_9838_AlReasoningValidationSystem:
+  gemini-2.5-flash → QUOTA_EXHAUSTED
+  gemini-flash-latest → SERVICE_UNAVAILABLE
+
+Key 2_textline_gemini_9838_AcademicUniverseService:
+  gemini-2.5-flash → MODEL_UNAVAILABLE
+
+No usable Gemini key/model combination was available.
+```
+
+---
+
+## 2. Problem 2 & 3 Fixed — Dual Counter System (`localStorage` Persistent)
+
+Each configured Gemini key card in the **📊 DAILY API KEY USAGE** panel now features two distinct counters:
+
+1. **Successful Outputs Today**:
+   - Incremented ONLY when that specific key generates the final answer delivered to the user.
+   - Formatted as `X / 100 (Configured Limit)`. Removed misleading labels like `Remaining: 95`.
+2. **API Requests Today**:
+   - Incremented for every real API request sent to Gemini (including health check scans, successful attempts, failed attempts, retries, 429, 503, 404, etc.).
+   - Includes a structured tree breakdown:
+     ```text
+     API Requests Today: 16
+       ├─ Successful outputs: 13
+       ├─ Health checks: 3
+       └─ Failed / Retries: 0
+     ```
+
+### Health Check Accounting & Probing Rules
+- Health check requests are tracked under `API Requests Today` and `Health checks`, but **never** increment `Successful Outputs Today`.
+- Health check diagnostic scans execute **ONLY** when the user explicitly clicks the `🧪 Test All API Keys` button. No silent probing occurs on page load or refresh.
+
+---
+
+## 3. Problem 6 & Model Cleanups
+
+- **Model List Cleanup**: Removed `gemini-2.0-flash` from default model lists because Google Cloud returns `404 NOT_FOUND` for new projects/users.
+- **Active Model Order**: `["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]`.
+- **Provenance Panel**: Retained exact successful-generation metadata (`Provider`, `Model`, `API Key Identifier`, `Model Fallback`, `Key Fallback`, `Attempts`, `Status`).
+
+---
+
+## 4. Automated Unit Test Verification
+
+Ran `python -m unittest -v test_fallback_system.py`:
+
+```text
+test_0_zero_keys_configured_reporting (test_fallback_system.TestFallbackSystem) ... ok
+test_1_all_expected_key_ids_recognized_and_ordered (test_fallback_system.TestFallbackSystem) ... ok
+test_2_post_processing_padding_preservation (test_fallback_system.TestFallbackSystem) ... ok
+test_3_fail_fast_on_400_403_404_rotation (test_fallback_system.TestFallbackSystem) ... ok
+test_4_rate_limit_429_rotation (test_fallback_system.TestFallbackSystem) ... ok
+test_5_openai_fallback_only_after_gemini_exhaustion (test_fallback_system.TestFallbackSystem) ... ok
+test_6_missing_env_vars_and_no_credential_leakage (test_fallback_system.TestFallbackSystem) ... ok
+test_7_key_health_check_diagnostics (test_fallback_system.TestFallbackSystem) ... ok
+test_8_case_insensitive_key_deduplication (test_fallback_system.TestFallbackSystem) ... ok
+test_9_generation_id_provenance_and_usage_tracking_metadata (test_fallback_system.TestFallbackSystem) ... ok
+test_10_503_service_unavailable_handling_and_retry_backoff (test_fallback_system.TestFallbackSystem) ... ok
+test_11_fine_grained_fallback_provenance_tracking (test_fallback_system.TestFallbackSystem) ... ok
+test_12_mixed_429_and_404_error_classification_does_not_claim_all_quota_exhausted (test_fallback_system.TestFallbackSystem) ... ok
+test_13_all_keys_429_quota_exhausted_summary (test_fallback_system.TestFallbackSystem) ... ok
+test_14_health_check_increments_api_requests_not_successful_outputs (test_fallback_system.TestFallbackSystem) ... ok
+test_15_failed_generation_request_increments_api_requests_not_successful_outputs (test_fallback_system.TestFallbackSystem) ... ok
+test_16_successful_generation_increments_both_counters (test_fallback_system.TestFallbackSystem) ... ok
+test_17_retries_increment_api_requests (test_fallback_system.TestFallbackSystem) ... ok
+test_18_duplicate_event_deduplication (test_fallback_system.TestFallbackSystem) ... ok
+test_19_404_model_unavailable_not_classified_as_quota (test_fallback_system.TestFallbackSystem) ... ok
+test_20_503_service_unavailable_not_classified_as_quota (test_fallback_system.TestFallbackSystem) ... ok
+test_21_local_storage_persistence_dual_counters (test_fallback_system.TestFallbackSystem) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 5.120s
+
+OK
+```
+
+---
+
+## 5. Live UI Dashboard Screenshot Verification
+
+![Dashboard Dual Counter Verification](file:///C:/Users/elitebook840g89319/.gemini/antigravity-ide/brain/31726c06-7004-43ce-b4cf-808367ce68ba/final_dashboard_status_1786708434152.png)
+
+---
+
+## 6. Standalone Executable Rebuild
+
+- Built standalone binary with PyInstaller at [dist/app.exe](file:///c:/github/textline/dist/app.exe).
+- Extracted runtime path configured to `%LOCALAPPDATA%\Textline\Runtime`.

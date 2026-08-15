@@ -1,0 +1,53 @@
+# Walkthrough — Execution Trace Provenance & Regression Verification
+
+We have verified and asserted the exact provenance calculations based on the actual execution trace, added 2 new regression unit tests (bringing the total to **34/34 passing tests**), and rebuilt `dist/app.exe`.
+
+## 1. Provenance Execution Trace Calculation
+
+The generation provenance panel displays metadata calculated strictly from the **actual attempt trace of that specific generation**, distinguishing between fresh execution and cached health execution.
+
+### Case A: Uncached Fresh Execution Trace (`Attempt 1 -> 429`, `Attempt 2 -> 404`, `Attempt 3 -> 200`)
+- **Initial Model**: `gemini-2.5-flash` (First model actually attempted via API call)
+- **Winning Model**: `gemini-flash-latest` (Model that returned 200 OK)
+- **Attempts**: `3`
+- **Model Fallback**: `Yes` (`true`) — because `gemini-flash-latest` differs from `gemini-2.5-flash`.
+- **Key Fallback**: `No` (`false`) — because Key 1 remained the active key.
+- **Status**: `Success`
+
+### Case B: Cached Health Execution Trace (`Attempt 1 -> 200`)
+- **Pre-marked Health**: `gemini-2.5-flash` (`QUOTA_EXHAUSTED`), `gemini-2.5-flash-lite` (`MODEL_UNAVAILABLE`)
+- **Engine Behavior**: Skips unavailable models before making API requests. First real API call is made to `gemini-flash-latest`.
+- **Initial Model**: `gemini-flash-latest` (First model actually attempted via API call)
+- **Winning Model**: `gemini-flash-latest`
+- **Attempts**: `1`
+- **Model Fallback**: `No` (`false`) — because `gemini-flash-latest` equals `gemini-flash-latest`.
+- **Key Fallback**: `No` (`false`)
+- **Status**: `Success`
+
+---
+
+## 2. Unit Test Suite (34/34 Tests Passed)
+
+Added **Test 32** and **Test 33** in `test_fallback_system.py`:
+
+```python
+# Test 32: Uncached Fresh Execution Trace
+[429 model A, 404 model B, 200 model C]
+=> model_fallback = True
+=> key_fallback = False
+=> attempt_count = 3
+
+# Test 33: Cached Health Execution Trace
+[200 model C] (models A and B pre-marked as QUOTA_EXHAUSTED / MODEL_UNAVAILABLE)
+=> model_fallback = False
+=> key_fallback = False
+=> attempt_count = 1
+```
+
+All 34 regression tests executed and passed cleanly: `python -m unittest test_fallback_system.py` $\rightarrow$ **`34 Passed, 0 Failures, 0 Errors`**.
+
+---
+
+## 3. Production Build
+
+`dist/app.exe` has been recompiled with PyInstaller (`python -m PyInstaller app.spec --clean`). Build completed successfully without errors.

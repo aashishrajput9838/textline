@@ -1,0 +1,53 @@
+# Walkthrough — Live Screenshot Processing Pipeline Log & Diagnostics
+
+## 1. Summary of Changes
+
+### Live Screenshot Processing Pipeline Log Panel
+Added a scrollable, real-time live log panel inside the **Real-Time Monitor Status** card on the dashboard ([`templates/index.html`](file:///c:/github/textline/templates/index.html)):
+- Displays every significant stage of screenshot processing with high-precision timestamps (`[HH:MM:SS.mmm]`), stage names (`[API_REQUEST_START]`), and status symbols (`✓`, `→`, `⚠`, `✗`).
+- Emits a unique `pipeline_id` for every screenshot processing run (e.g. `20260815-030300-7F31`).
+- Displays a final status summary banner upon pipeline termination:
+  `FINAL STATUS: ERROR | ERROR CODE: NO_AVAILABLE_MODEL | TOTAL TIME: 88 ms`
+- Auto-scrolls to the newest event and caps maximum DOM log entries at 400.
+- Includes a **"🗑️ Clear Logs"** button (`clearPipelineLogs()`).
+
+### Backend Event Instrumentation
+Instrumented every stage of [`app.py`](file:///c:/github/textline/app.py) with structured `emit_pipeline_log()` calls:
+- `SCREENSHOT_DETECTED`
+- `CLIPBOARD_READ_START` $\rightarrow$ `CLIPBOARD_READ_SUCCESS`
+- `IMAGE_VALIDATION_START` $\rightarrow$ `IMAGE_VALIDATION_SUCCESS`
+- `IMAGE_PREPARATION_START` $\rightarrow$ `IMAGE_PREPARATION_SUCCESS`
+- `GENERATION_START`
+- `KEY_SELECTION_START` $\rightarrow$ `KEY_SELECTED`
+- `MODEL_SELECTION_START` $\rightarrow$ `MODEL_SKIPPED`
+- `API_REQUEST_START` $\rightarrow$ `API_RESPONSE`
+- `MODEL_FALLBACK` / `KEY_FALLBACK`
+- `CLIPBOARD_COPY_START` $\rightarrow$ `CLIPBOARD_COPY_SUCCESS`
+- `GENERATION_SUCCESS` / `GENERATION_ERROR`
+- `PIPELINE_ERROR` $\rightarrow$ `PIPELINE_COMPLETE`
+
+---
+
+## 2. Invariants & Architecture Preservation
+
+- **Unchanged Core Logic**: Gemini model ordering, API key ordering, fallback algorithm, health registry, quota accounting, provenance calculation, 503 retry/backoff behavior, and existing unit tests were **100% preserved**.
+
+---
+
+## 3. Test Suite & Executable Rebuild
+
+### Unit Test Suite Results
+Ran full unit test suite (`python -m unittest test_fallback_system.py`):
+- Added **Test 40** (`test_40_pipeline_log_events_emitted_with_unique_pipeline_id`) asserting `pipeline_log` event emission, unique `pipeline_id`, and `API_REQUEST_START` $\rightarrow$ `API_RESPONSE` stage pairs.
+- Added **Test 41** (`test_41_pipeline_log_terminal_error_and_no_available_model_logs`) asserting terminal `ALL_ATTEMPTS_EXHAUSTED` log with `error_code="NO_AVAILABLE_MODEL"` and terminal `PIPELINE_COMPLETE`.
+```text
+RESULTS -> FAILURES: 0, ERRORS: 0, TOTAL: 42
+```
+All **42/42 tests passed** cleanly.
+
+### Standalone Executable Rebuild
+Recompiled standalone binary [`dist/app.exe`](file:///c:/github/textline/dist/app.exe) cleanly via PyInstaller (`python -m PyInstaller app.spec --clean`):
+```text
+Build complete! The results are available in: C:\github\textline\dist\app.exe
+```
+Executable compiled with zero errors.

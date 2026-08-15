@@ -1,0 +1,52 @@
+# Textline — Generation Provenance in Status Row UI Enhancement
+
+The **Real-Time Monitor Status** card has been enhanced to display generation provenance metadata (`<provider> · <model> · <key_id>`) immediately to the **LEFT** of the `SUCCESS` badge.
+
+---
+
+## 📸 Verified Live UI Dashboard Screenshot
+
+![Textline Live Dashboard with Status Row Provenance Tag](file:///C:/Users/elitebook840g89319/.gemini/antigravity-ide/brain/31726c06-7004-43ce-b4cf-808367ce68ba/status_row_provenance_verified.png)
+
+---
+
+## 🛠️ Implementation Summary & Layout Hierarchy
+
+1. **HTML Layout ([templates/index.html](file:///c:/github/textline/templates/index.html))**:
+   - Added `#status-provenance-tag` immediately before `#status-badge`:
+     ```html
+     <div class="status-box">
+         <div class="status-info">
+             <span id="status-provenance-tag" class="status-provenance-tag" style="display: none;"></span>
+             <span id="status-badge" class="status-badge idle">IDLE</span>
+             <span id="status-message" class="status-message">Initializing background listener...</span>
+         </div>
+     </div>
+     ```
+
+2. **CSS Compact Styling ([templates/index.html](file:///c:/github/textline/templates/index.html))**:
+   - Styled with a sleek indigo glassmorphism badge (`#a5b4fc` text, indigo border and glow):
+     ```css
+     .status-provenance-tag {
+         font-family: 'JetBrains Mono', monospace;
+         font-size: 0.8rem;
+         font-weight: 600;
+         color: #a5b4fc;
+         background: rgba(99, 102, 241, 0.15);
+         border: 1px solid rgba(99, 102, 241, 0.35);
+         padding: 0.3rem 0.65rem;
+         border-radius: 8px;
+         display: inline-flex;
+         align-items: center;
+         word-break: break-word;
+     }
+     ```
+
+3. **Dynamic JavaScript Event Handler**:
+   - Reuses actual metadata returned by the backend generation response (`meta.provider`, `meta.model`, `meta.key_id`).
+   - Format: `Google Gemini · <model> · <key_id>` (e.g. `Google Gemini · gemini-flash-latest · 1_textline_gemini_9838_AlReasoningValidationSystem`).
+   - Dynamically updates whenever a new response or failover key succeeds.
+   - Automatically hides when status is not `SUCCESS` (e.g. `IDLE` or `PROCESSING`).
+
+4. **Executable Rebuild**:
+   - Recompiled production binary [dist/app.exe](file:///c:/github/textline/dist/app.exe) and verified live.

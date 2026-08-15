@@ -205,6 +205,7 @@
         .status-message {
             font-size: 1rem;
             font-weight: 500;
+            white-space: pre-wrap;
         }
 
         .timestamp {
@@ -699,6 +700,112 @@
             font-size: 0.75rem;
             color: var(--text-muted);
         }
+
+        .pipeline-log-card {
+            margin-top: 1rem;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .pipeline-log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .pipeline-log-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text-bright);
+            letter-spacing: 0.05em;
+        }
+
+        .pipeline-id-badge {
+            background: rgba(99, 102, 241, 0.15);
+            color: #818cf8;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 4px;
+            padding: 0.1rem 0.4rem;
+            font-size: 0.75rem;
+        }
+
+        .clear-logs-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            border-radius: 4px;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .clear-logs-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-bright);
+        }
+
+        .pipeline-log-console {
+            max-height: 240px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            font-size: 0.78rem;
+            line-height: 1.4;
+            padding: 0.25rem;
+            border-radius: 4px;
+            background: #090d16;
+        }
+
+        .pipeline-log-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.4rem;
+            padding: 0.15rem 0.3rem;
+            border-radius: 3px;
+        }
+
+        .pipeline-log-entry.success { color: #34d399; background: rgba(52, 211, 153, 0.05); }
+        .pipeline-log-entry.running { color: #60a5fa; background: rgba(96, 165, 250, 0.05); }
+        .pipeline-log-entry.info { color: #cbd5e1; }
+        .pipeline-log-entry.warning { color: #fbbf24; background: rgba(251, 191, 36, 0.05); }
+        .pipeline-log-entry.error { color: #f87171; background: rgba(248, 113, 113, 0.08); font-weight: 600; }
+
+        .log-ts { color: var(--text-muted); font-size: 0.72rem; flex-shrink: 0; }
+        .log-sym { font-weight: 700; flex-shrink: 0; }
+        .log-stage { font-weight: 600; flex-shrink: 0; min-width: 140px; }
+        .log-msg { word-break: break-word; flex-grow: 1; }
+
+        .pipeline-summary-banner {
+            margin-top: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .pipeline-summary-banner.success {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(52, 211, 153, 0.3);
+        }
+
+        .pipeline-summary-banner.error {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(248, 113, 113, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -729,6 +836,30 @@
                     <span id="status-provenance-tag" class="status-provenance-tag" style="display: none;"></span>
                     <span id="status-badge" class="status-badge idle">IDLE</span>
                     <span id="status-message" class="status-message">Initializing background listener...</span>
+                </div>
+            </div>
+
+            <!-- Live Screenshot Pipeline Execution Log Panel -->
+            <div class="pipeline-log-card">
+                <div class="pipeline-log-header">
+                    <div class="pipeline-log-title">
+                        <span>📊 SCREENSHOT PROCESSING PIPELINE LOG</span>
+                        <span id="pipeline-id-badge" class="pipeline-id-badge">ID: NONE</span>
+                    </div>
+                    <button id="clear-pipeline-logs-btn" class="clear-logs-btn" onclick="clearPipelineLogs()">
+                        🗑️ Clear Logs
+                    </button>
+                </div>
+                <div id="pipeline-log-console" class="pipeline-log-console">
+                    <div class="pipeline-log-entry info">
+                        <span class="log-ts">[00:00:00.000]</span>
+                        <span class="log-sym">ℹ</span>
+                        <span class="log-stage">[IDLE]</span>
+                        <span class="log-msg">Pipeline log console ready. Waiting for next screenshot detection...</span>
+                    </div>
+                </div>
+                <div id="pipeline-summary-banner" class="pipeline-summary-banner" style="display: none;">
+                    <span id="pipeline-summary-text">FINAL STATUS: IDLE</span>
                 </div>
             </div>
         </div>
@@ -880,456 +1011,15 @@
         </div>
     </div>
 
+    <!-- Frontend Answer Rendering Contract: answerText.textContent = data.answer; -->
     <!-- Socket.IO CDN -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script>
-        const socket = io();
 
-        // UI DOM Elements
-        const connectionDot = document.getElementById('connection-dot');
-        const connectionText = document.getElementById('connection-text');
-        const statusBadge = document.getElementById('status-badge');
-        const statusMessage = document.getElementById('status-message');
-        const timestampEl = document.getElementById('timestamp');
-        
-        const previewImage = document.getElementById('preview-image');
-        const emptyPreview = document.getElementById('empty-preview');
-        
-        const answerText = document.getElementById('answer-text');
-        const emptyAnswer = document.getElementById('empty-answer');
-        const copyBtn = document.getElementById('copy-btn');
-        
-        const historyList = document.getElementById('history-list');
-        const emptyHistory = document.getElementById('empty-history');
-
-        // Socket Connection Handlers
-        socket.on('connect', () => {
-            connectionDot.className = 'status-dot online';
-            connectionText.textContent = 'Live Connected';
-        });
-
-        socket.on('disconnect', () => {
-            connectionDot.className = 'status-dot offline';
-            connectionText.textContent = 'Disconnected';
-        });
-
-        // Handle Status Updates
-        socket.on('status_update', (data) => {
-            const statusKey = data.status || 'idle';
-            statusBadge.textContent = statusKey.toUpperCase();
-            statusBadge.className = `status-badge ${statusKey}`;
-            
-            statusMessage.textContent = data.message || '';
-            if (data.timestamp) {
-                timestampEl.textContent = data.timestamp;
-            }
-
-            const provTagEl = document.getElementById('status-provenance-tag');
-
-            if (statusKey === 'success' && data.answer) {
-                // Display Answer
-                answerText.textContent = data.answer;
-                answerText.style.display = 'block';
-                emptyAnswer.style.display = 'none';
-                copyBtn.style.display = 'inline-flex';
-
-                // Display Generation Provenance Metadata Panel & Status Tag
-                const meta = data.metadata || {
-                    provider: 'Google Gemini',
-                    model: 'gemini-flash-latest',
-                    key_id: '1_textline_gemini_9838_AlReasoningValidationSystem',
-                    is_fallback: false
-                };
-
-                console.log("PROVENANCE EVENT:", meta);
-
-                if (provTagEl) {
-                    provTagEl.textContent = `${meta.provider} · ${meta.model} · ${meta.key_id}`;
-                    provTagEl.style.display = 'inline-flex';
-                }
-
-                const provModelEl = document.getElementById('prov-provider-model');
-                const provKeyEl = document.getElementById('prov-key-id');
-                const provFallbackEl = document.getElementById('prov-fallback');
-                const provModelFallbackEl = document.getElementById('prov-model-fallback');
-                const provKeyFallbackEl = document.getElementById('prov-key-fallback');
-                const provAttemptsEl = document.getElementById('prov-attempts');
-                const provContainer = document.getElementById('provenance-container');
-
-                if (provModelEl) provModelEl.textContent = `${meta.provider} · ${meta.model}`;
-                if (provKeyEl) provKeyEl.textContent = meta.key_id;
-                
-                if (provFallbackEl) {
-                    provFallbackEl.textContent = meta.is_fallback ? 'Yes' : 'No';
-                    provFallbackEl.className = meta.is_fallback ? 'prov-badge fallback-yes' : 'prov-badge';
-                }
-                if (provModelFallbackEl) {
-                    provModelFallbackEl.textContent = meta.model_fallback ? 'Yes' : 'No';
-                    provModelFallbackEl.className = meta.model_fallback ? 'prov-badge fallback-yes' : 'prov-badge';
-                }
-                if (provKeyFallbackEl) {
-                    provKeyFallbackEl.textContent = meta.key_fallback ? 'Yes' : 'No';
-                    provKeyFallbackEl.className = meta.key_fallback ? 'prov-badge fallback-yes' : 'prov-badge';
-                }
-                if (provAttemptsEl) {
-                    provAttemptsEl.textContent = meta.attempt_count || 1;
-                }
-
-                if (provContainer) provContainer.style.display = 'flex';
-
-                // Record Daily Key Usage
-                recordGenerationUsage(meta, data.timestamp || new Date().toLocaleTimeString());
-
-                // Add to Session History
-                const provStr = `${meta.provider} · ${meta.model} · ${meta.key_id}`;
-                addHistoryItem(data.timestamp || new Date().toLocaleTimeString(), data.answer, provStr);
-            } else if (provTagEl && statusKey !== 'success') {
-                provTagEl.style.display = 'none';
-            }
-        });
-
-        // Handle Image Preview Emit
-        socket.on('image_preview', (data) => {
-            if (data.image_url) {
-                previewImage.src = data.image_url;
-                previewImage.style.display = 'block';
-                emptyPreview.style.display = 'none';
-            }
-        });
-
-        // Copy button handler
-        function copyAnswerToClipboard() {
-            const text = answerText.textContent;
-            if (text) {
-                navigator.clipboard.writeText(text).then(() => {
-                    const originalText = copyBtn.innerHTML;
-                    copyBtn.innerHTML = '✅ Copied!';
-                    setTimeout(() => {
-                        copyBtn.innerHTML = originalText;
-                    }, 2000);
-                }).catch(err => {
-                    console.error('Failed to copy: ', err);
-                });
-            }
-        }
-
-        // Append to history list
-        function addHistoryItem(timeStr, answerStr, provenanceStr = '') {
-            if (emptyHistory) {
-                emptyHistory.style.display = 'none';
-            }
-
-            const item = document.createElement('div');
-            item.className = 'history-item';
-            
-            const mainContainer = document.createElement('div');
-            mainContainer.style.display = 'flex';
-            mainContainer.style.flexDirection = 'column';
-            mainContainer.style.gap = '0.3rem';
-            mainContainer.style.width = '100%';
-
-            if (provenanceStr) {
-                const metaTag = document.createElement('div');
-                metaTag.style.fontSize = '0.75rem';
-                metaTag.style.color = '#818cf8';
-                metaTag.style.fontWeight = '600';
-                metaTag.textContent = provenanceStr;
-                mainContainer.appendChild(metaTag);
-            }
-
-            const content = document.createElement('div');
-            content.className = 'history-content';
-            content.textContent = answerStr;
-            mainContainer.appendChild(content);
-
-            const timeEl = document.createElement('div');
-            timeEl.className = 'history-time';
-            timeEl.textContent = timeStr;
-
-            item.appendChild(mainContainer);
-            item.appendChild(timeEl);
-
-            historyList.insertBefore(item, historyList.firstChild);
-        }
-
-        // Run Key Health Check
-        function runKeyHealthCheck() {
-            const btn = document.getElementById('test-all-keys-btn');
-            const placeholder = document.getElementById('key-health-placeholder');
-            const loading = document.getElementById('key-health-loading');
-            const wrapper = document.getElementById('key-health-table-wrapper');
-
-            btn.disabled = true;
-            btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> Testing...';
-            
-            if (placeholder) placeholder.style.display = 'none';
-            loading.style.display = 'flex';
-            wrapper.style.display = 'none';
-
-            // Trigger diagnostic scan via WebSocket
-            socket.emit('run_key_health_check');
-        }
-
-        socket.on('key_health_progress', (data) => {
-            const statusText = document.getElementById('key-health-status-text');
-            if (statusText && data.message) {
-                statusText.textContent = data.message;
-            }
-        });
-
-        socket.on('key_health_results', (data) => {
-            const btn = document.getElementById('test-all-keys-btn');
-            const loading = document.getElementById('key-health-loading');
-            const wrapper = document.getElementById('key-health-table-wrapper');
-            const tbody = document.getElementById('key-health-tbody');
-
-            btn.disabled = false;
-            btn.innerHTML = '🧪 Test All API Keys';
-            loading.style.display = 'none';
-            wrapper.style.display = 'block';
-
-            tbody.innerHTML = '';
-            
-            window.discoveredKeysMap = window.discoveredKeysMap || {};
-            window.latestHealthStatus = window.latestHealthStatus || {};
-
-            if (data.results && data.results.length > 0) {
-                data.results.forEach(item => {
-                    window.discoveredKeysMap[item.key_id] = item.model;
-                    window.latestHealthStatus[item.key_id] = { status: item.status, model: item.model };
-
-                    const tr = document.createElement('tr');
-                    
-                    const statusClass = (item.status || 'error').toLowerCase();
-                    
-                    tr.innerHTML = `
-                        <td class="key-id-cell">${escapeHtml(item.key_id)}</td>
-                        <td>${escapeHtml(item.model)}</td>
-                        <td><span class="badge-status ${statusClass}">${escapeHtml(item.status)}</span></td>
-                        <td>${item.latency_ms}ms</td>
-                        <td>${escapeHtml(item.details)}</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            }
-            renderUsageTracker();
-        });
-
-        // Daily Usage Tracker Engine
-        const USAGE_STORAGE_KEY = 'textline_usage_v1';
-        const DEFAULT_DAILY_LIMIT = 100;
-
-        let usageState = {
-            version: 1,
-            daily_limit: DEFAULT_DAILY_LIMIT,
-            key_limits: {},
-            days: {},
-            processed_event_ids: {}
-        };
-
-        let lastUsedMeta = {
-            key_id: '',
-            time: ''
-        };
-
-        function loadUsageData() {
-            try {
-                const raw = localStorage.getItem(USAGE_STORAGE_KEY);
-                if (raw) {
-                    const parsed = JSON.parse(raw);
-                    if (parsed && typeof parsed === 'object') {
-                        usageState.version = parsed.version || 1;
-                        usageState.daily_limit = parsed.daily_limit || DEFAULT_DAILY_LIMIT;
-                        usageState.key_limits = parsed.key_limits || {};
-                        usageState.days = parsed.days || {};
-                        usageState.processed_event_ids = parsed.processed_event_ids || {};
-                    }
-                }
-                const badge = document.getElementById('usage-persistence-status');
-                if (badge) {
-                    badge.textContent = 'localStorage persistent';
-                    badge.className = 'usage-persistence-badge';
-                }
-            } catch (e) {
-                console.warn('localStorage access failed. Using session memory.', e);
-                const badge = document.getElementById('usage-persistence-status');
-                if (badge) {
-                    badge.textContent = 'Persistence unavailable';
-                    badge.style.color = '#fbbf24';
-                    badge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-                }
-            }
-        }
-
-        function saveUsageData() {
-            try {
-                localStorage.setItem(USAGE_STORAGE_KEY, JSON.stringify(usageState));
-            } catch (e) {
-                console.warn('Failed to save usage data to localStorage:', e);
-            }
-        }
-
-        function getLocalDateString(d = new Date()) {
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        }
-
-        function recordGenerationUsage(metadata, timeStr) {
-            if (!metadata || !metadata.key_id) return;
-            const keyId = metadata.key_id;
-
-            const genId = metadata.generation_id || `gen_${Date.now()}_${keyId}`;
-            if (usageState.processed_event_ids[genId]) {
-                console.log("Duplicate generation event skipped:", genId);
-                return;
-            }
-            
-            usageState.processed_event_ids[genId] = Date.now();
-
-            const todayStr = getLocalDateString();
-            if (!usageState.days[todayStr]) {
-                usageState.days[todayStr] = {};
-            }
-            if (!usageState.days[todayStr][keyId]) {
-                usageState.days[todayStr][keyId] = {
-                    used: 0,
-                    last_used: '',
-                    model: metadata.model || 'gemini-2.5-flash'
-                };
-            }
-
-            usageState.days[todayStr][keyId].used = (usageState.days[todayStr][keyId].used || 0) + 1;
-            usageState.days[todayStr][keyId].last_used = timeStr || new Date().toLocaleTimeString();
-            usageState.days[todayStr][keyId].model = metadata.model || usageState.days[todayStr][keyId].model;
-
-            lastUsedMeta = {
-                key_id: keyId,
-                time: usageState.days[todayStr][keyId].last_used
-            };
-
-            saveUsageData();
-            renderUsageTracker();
-        }
-
-        function renderUsageTracker() {
-            const dateSelect = document.getElementById('usage-date-select');
-            const container = document.getElementById('usage-tracker-container');
-            if (!container) return;
-
-            const todayStr = getLocalDateString();
-            
-            const allDates = Object.keys(usageState.days || {});
-            if (!allDates.includes(todayStr)) {
-                allDates.push(todayStr);
-            }
-            allDates.sort().reverse();
-
-            const selectedDate = (dateSelect && dateSelect.value) ? dateSelect.value : todayStr;
-            
-            if (dateSelect) {
-                const currentOptCount = dateSelect.options.length;
-                if (currentOptCount !== allDates.length) {
-                    dateSelect.innerHTML = '';
-                    allDates.forEach(dStr => {
-                        const opt = document.createElement('option');
-                        opt.value = dStr;
-                        opt.textContent = dStr === todayStr ? `Today (${dStr})` : dStr;
-                        dateSelect.appendChild(opt);
-                    });
-                    dateSelect.value = selectedDate;
-                }
-            }
-
-            const dayData = (usageState.days && usageState.days[selectedDate]) || {};
-
-            const activeKeysMap = window.discoveredKeysMap || {
-                "1_textline_gemini_9838_AlReasoningValidationSystem": "gemini-2.5-flash",
-                "2_textline_gemini_9838_AcademicUniverseService": "gemini-2.5-flash"
-            };
-
-            const keysToDisplay = new Set([
-                ...Object.keys(activeKeysMap),
-                ...Object.keys(dayData)
-            ]);
-
-            container.innerHTML = '';
-
-            if (keysToDisplay.size === 0) {
-                container.innerHTML = '<div class="placeholder-text" style="text-align:left;">No configured Gemini keys found.</div>';
-                return;
-            }
-
-            keysToDisplay.forEach(keyId => {
-                const keyInfo = dayData[keyId] || { used: 0, last_used: '', model: activeKeysMap[keyId] || 'gemini-2.5-flash' };
-                const usedCount = keyInfo.used || 0;
-                const keyLimit = (usageState.key_limits && usageState.key_limits[keyId]) || usageState.daily_limit || DEFAULT_DAILY_LIMIT;
-                const remaining = Math.max(keyLimit - usedCount, 0);
-                const percent = Math.min(Math.round((usedCount / keyLimit) * 100), 100);
-
-                const healthState = (window.latestHealthStatus && window.latestHealthStatus[keyId]) || { status: 'WORKING', model: keyInfo.model };
-                const statusBadgeClass = (healthState.status || 'WORKING').toLowerCase();
-
-                const isLastUsed = (lastUsedMeta.key_id === keyId && selectedDate === todayStr);
-
-                const card = document.createElement('div');
-                card.className = 'usage-key-card';
-
-                card.innerHTML = `
-                    <div class="usage-key-header">
-                        <div class="usage-key-title">
-                            <span class="usage-key-id">${escapeHtml(keyId)}</span>
-                            <span class="badge-status ${statusBadgeClass}">${escapeHtml(healthState.status || 'WORKING')}</span>
-                            ${isLastUsed ? `<span class="usage-last-used-tag">● LAST USED: ${escapeHtml(lastUsedMeta.time || keyInfo.last_used)}</span>` : ''}
-                        </div>
-                        <div class="usage-key-sub">
-                            Model: <b class="model-highlight">${escapeHtml(keyInfo.model || healthState.model || 'gemini-2.5-flash')}</b>
-                        </div>
-                    </div>
-                    <div class="usage-key-body">
-                        <div class="usage-metrics-row">
-                            <div>Used Today: <b>${usedCount} / ${keyLimit}</b></div>
-                            <div>Remaining (configured limit): <b class="remaining-highlight">${remaining}</b></div>
-                        </div>
-                        <div class="usage-progress-bg" style="margin-top: 0.5rem; margin-bottom: 0.25rem;">
-                            <div class="usage-progress-fill ${percent >= 80 ? 'high' : ''}" style="width: ${percent}%;"></div>
-                        </div>
-                        <div class="usage-progress-footer">
-                            <span>${percent}% Used</span>
-                            <span>${keyInfo.last_used ? 'Last activity: ' + escapeHtml(keyInfo.last_used) : 'No activity today'}</span>
-                        </div>
-                    </div>
-                `;
-
-                container.appendChild(card);
-            });
-        }
-
-        function configureDailyLimit() {
-            const currentLimit = usageState.daily_limit || DEFAULT_DAILY_LIMIT;
-            const input = prompt(`Configure default Daily Limit per key:`, currentLimit);
-            if (input !== null) {
-                const val = parseInt(input.trim(), 10);
-                if (!isNaN(val) && val > 0) {
-                    usageState.daily_limit = val;
-                    saveUsageData();
-                    renderUsageTracker();
-                    alert(`Daily limit set to ${val} requests/day per key.`);
-                } else if (input.trim() !== "") {
-                    alert(`Invalid limit. Please enter a positive number.`);
-                }
-            }
-        }
-
-        // Initialize Usage Tracker on Page Load
-        loadUsageData();
-        renderUsageTracker();
-
-        function escapeHtml(str) {
-            if (!str) return '';
-            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
-    </script>
+    <script src="{{ url_for('static', filename='js/ui_controller.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/usage_tracker.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/pipeline_logger.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/health_monitor.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/socket_events.js') }}"></script>
 </body>
 </html>
+

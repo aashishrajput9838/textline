@@ -1,0 +1,68 @@
+# Walkthrough — Live Screenshot Processing Pipeline Log & Diagnostics Fix
+
+## 1. Summary of Changes & Diagnostic Fix
+
+### Screenshot Detection Scope Fix ([`app.py`](file:///c:/github/textline/app.py))
+- **Root Cause Identified**: `monitor_clipboard()` previously generated a new `pipeline_id` and emitted `SCREENSHOT_DETECTED` on every 1-second polling loop *before* checking `if current_hash != last_image_hash:`. As a result, static images on the clipboard produced detached events every second, while new screenshot processing (`status_update: processing`) inside `if current_hash != last_image_hash:` did not emit `SCREENSHOT_DETECTED`.
+- **Fix Applied**: Moved `pipeline_id = generate_pipeline_id()` and `emit_pipeline_log(pipeline_id, "SCREENSHOT_DETECTED", ...)` directly **inside** `if current_hash != last_image_hash:`.
+- **Guaranteed Execution Path**:
+  ```text
+  monitor_clipboard()
+        ↓
+  ImageGrab.grabclipboard() (isinstance Image)
+        ↓
+  current_hash != last_image_hash  (NEW SCREENSHOT DETECTED!)
+        ↓
+  pipeline_id = generate_pipeline_id()
+        ↓
+  emit_pipeline_log(pipeline_id, "SCREENSHOT_DETECTED", "New screenshot detected in clipboard")
+        ↓
+  emit_pipeline_log(pipeline_id, "CLIPBOARD_READ_SUCCESS", ...)
+        ↓
+  emit_pipeline_log(pipeline_id, "IMAGE_VALIDATION_SUCCESS", ...)
+        ↓
+  emit_pipeline_log(pipeline_id, "IMAGE_PREPARATION_START", ...)
+        ↓
+  socketio.emit('status_update', {'status': 'processing', ...})
+        ↓
+  generate_content_with_fallback(..., pipeline_id=pipeline_id)
+        ↓
+  socketio.emit('status_update', {'status': 'success', ...})
+        ↓
+  emit_pipeline_log(pipeline_id, "PIPELINE_COMPLETE", ...)
+  ```
+
+### Terminal Diagnostic Logging ([`app.py`](file:///c:/github/textline/app.py))
+- Added real-time terminal debug output inside `emit_pipeline_log`:
+  ```python
+  print(f"[PIPELINE DEBUG] id={pipeline_id} stage={stage} message={message}", flush=True)
+  ```
+
+---
+
+## 2. Invariants & Architecture Preservation
+
+- **Gemini Fallback Architecture**: Preserved 100% without modification.
+- **Key Health Registry & Quota Accounting**: Preserved 100%.
+- **Provenance & Badge Panels**: Preserved 100%.
+
+---
+
+## 3. Test Suite & Executable Rebuild
+
+### Unit Test Suite Results
+Ran full unit test suite (`python -m unittest test_fallback_system.py`):
+```text
+Ran 42 tests in 0.070s
+
+OK
+RESULTS -> FAILURES: 0, ERRORS: 0, TOTAL: 42
+```
+All **42/42 tests passed** cleanly.
+
+### Standalone Executable Rebuild
+Recompiled standalone binary [`dist/app.exe`](file:///c:/github/textline/dist/app.exe) via PyInstaller (`python -m PyInstaller app.spec --clean`):
+```text
+Build complete! The results are available in: C:\github\textline\dist
+```
+Executable compiled with zero errors.

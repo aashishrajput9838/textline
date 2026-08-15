@@ -1,0 +1,57 @@
+# Walkthrough — Model-Specific Health Status & Matrix UI
+
+We have implemented model-specific health tracking across Gemini models, optimized 503 transient error handling with exponential backoff, added the model matrix UI to the Health Monitor table and Daily Usage cards, verified 32 regression unit tests, and rebuilt `dist/app.exe`.
+
+## 1. Key Changes Implemented
+
+### Backend (`app.py`)
+- **Per-Key, Per-Model Health Registry**: Replaced single global key health state with `(key_id, model_name)` health dictionary:
+  ```python
+  KEY_MODEL_HEALTH_REGISTRY[key_id][model_name] = {
+      "status": "WORKING", # WORKING, QUOTA_EXHAUSTED, MODEL_UNAVAILABLE, SERVICE_UNAVAILABLE, UNAUTHORIZED, INVALID_ARGUMENT, ERROR
+      "http_code": 200,
+      "latency_ms": 120,
+      "details": "PASS"
+  }
+  ```
+- **Supported Health Check Models**: Health check diagnostic scan queries every configured key against `SUPPORTED_HEALTH_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]`.
+- **404 Model Unavailable Isolation**: 404 response marks ONLY the targeted model as `MODEL_UNAVAILABLE`. The key remains valid for other models.
+- **503 Transient Handling & Exponential Backoff**:
+  - Treated 503 as transient high-demand service error.
+  - Implemented 2 controlled retries with exponential backoff (`0.5s`, `1.0s`).
+  - Does NOT mark credential invalid or quota exhausted.
+  - Returns `SERVICE_UNAVAILABLE / HIGH_DEMAND` badge.
+- **Live Generation Real-Time Updates**: Real generation attempts immediately update the health registry state if a 429, 404, or 503 is encountered.
+- **SocketIO Event Payload**: `health_check_complete` emits model-specific array containing `(key_id, model, status, http_code, latency_ms, details)`.
+
+### Frontend (`templates/index.html`)
+- **API Key Health Monitor Table**:
+  - Updated table headers: `KEY ID`, `GEMINI-2.5-FLASH`, `GEMINI-2.5-FLASH-LITE`, `GEMINI-FLASH-LATEST`.
+  - Displays individual latency and status badges per model cell.
+- **Daily API Key Usage Cards**:
+  - Displays a tree structure titled **`Model Availability Matrix:`** under each configured key card:
+    ```text
+    1_textline_gemini_9838_AlReasoningValidationSystem
+     ├─ gemini-2.5-flash       → QUOTA_EXHAUSTED
+     ├─ gemini-2.5-flash-lite  → MODEL_UNAVAILABLE
+     └─ gemini-flash-latest    → WORKING
+    ```
+
+---
+
+## 2. Live UI Verification & Test Results
+
+### 32/32 Unit Tests Passed Cleanly
+`python -m unittest -v test_fallback_system.py`
+All 32 test cases passed with zero errors or failures.
+
+### Live Browser Matrix UI Screenshot
+Below is the live screenshot of the Textline dashboard running the new `Key x Model` matrix status scan:
+
+![Model-Specific Health Matrix UI Verification](file:///C:/Users/elitebook840g89319/.gemini/antigravity-ide/brain/31726c06-7004-43ce-b4cf-808367ce68ba/test_results_1786709749096.png)
+
+---
+
+## 3. Production Build
+
+`dist/app.exe` has been recompiled with PyInstaller (`python -m PyInstaller app.spec --clean`). Build finished successfully.

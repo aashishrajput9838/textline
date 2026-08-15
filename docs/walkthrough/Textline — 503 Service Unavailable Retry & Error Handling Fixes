@@ -1,0 +1,23 @@
+# Textline — 503 Service Unavailable Retry & Error Handling Fixes
+
+Textline's fallback engine and API Key Health Monitor have been upgraded to properly handle Google Gemini infrastructure `503 UNAVAILABLE` high-demand spikes.
+
+---
+
+## 📸 Verified Live UI Dashboard Screenshot (503 SERVICE_UNAVAILABLE)
+
+![Textline Live Dashboard with 503 SERVICE_UNAVAILABLE Amber Badge and Smart Status Message](file:///C:/Users/elitebook840g89319/.gemini/antigravity-ide/brain/31726c06-7004-43ce-b4cf-808367ce68ba/503_handling_verified.png)
+
+---
+
+## 🛠️ Summary of Changes & Fixes Applied
+
+| Area / Component | Fix / Enhancements | Status |
+| :--- | :--- | :---: |
+| **`DEFAULT_GEMINI_MODELS`** | Removed `gemini-2.5-pro` (which returns `404 NOT_FOUND` as unavailable to new users). Updated default list to `["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]`. | **PASSED** |
+| **Controlled 503 Exponential Backoff** | Implemented controlled retry loop for 503 responses (up to 2 retries per model with `1.5s` $\rightarrow$ `3.0s` sleep backoff) before failing over to alternative active models or keys. | **PASSED** |
+| **Smart Non-Misleading Error Summary** | When all attempts fail due to 503 high-demand spikes, user message reads:<br>`Gemini temporarily unavailable — Google is currently reporting high demand. Retrying...`<br>*(Replaced misleading `.env` configuration error message)*. | **PASSED** |
+| **API Health Status Mapping** | Distinct HTTP Status mappings in Health Monitor:<br>• `200` $\rightarrow$ **`WORKING`**<br>• `400` $\rightarrow$ **`INVALID_ARGUMENT`**<br>• `403` $\rightarrow$ **`UNAUTHORIZED`**<br>• `404` $\rightarrow$ **`MODEL_UNAVAILABLE`**<br>• `429` $\rightarrow$ **`QUOTA_EXHAUSTED`**<br>• `503` $\rightarrow$ **`SERVICE_UNAVAILABLE`** (amber badge) | **PASSED** |
+| **Usage Tracking Integrity** | Transient 503 errors and retries do **NOT** increment daily generation counters in `localStorage`. | **PASSED** |
+| **Automated Unit Tests** | **10/10 Unit Tests Passed** in `test_fallback_system.py`. | **PASSED** |
+| **Executable Rebuild** | Compiled standalone executable at [dist/app.exe](file:///c:/github/textline/dist/app.exe). | **PASSED** |

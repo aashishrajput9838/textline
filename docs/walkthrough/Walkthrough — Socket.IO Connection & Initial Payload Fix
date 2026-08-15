@@ -1,0 +1,42 @@
+# Walkthrough — Socket.IO Connection & Initial Payload Fix
+
+## 1. Exact Root Cause Identified
+
+### Discovery & Trace Path
+- **Trace Path**: Browser $\rightarrow$ Socket.IO Client JS $\rightarrow$ HTML Template Parsing.
+- **Root Cause**:
+  In [`templates/index.html`](file:///c:/github/textline/templates/index.html), lines 894–1052 and lines 1054–1214 contained an exact duplicate block of JavaScript code.
+- **Parse-Time Exception**:
+  When the browser loaded `index.html`, it executed `const connectionDot = ...` at line 895, and then hit `const connectionDot = ...` at line 1055.
+  This threw an unhandled browser JavaScript **`SyntaxError: Identifier 'connectionDot' has already been declared`**.
+- **Impact**:
+  Because of this parse-time SyntaxError, the browser's JavaScript engine completely aborted script execution before `socket.on('connect')`, `renderHealthMatrixTable()`, and `renderUsageTracker()` could run. Consequently, the frontend remained stuck on `"Connecting..."`, `"IDLE — Initializing background listener..."`, with empty key health and daily usage tables.
+
+---
+
+## 2. Changes Implemented
+
+### Files Changed
+1. **[`templates/index.html`](file:///c:/github/textline/templates/index.html)**:
+   - Removed the duplicate JavaScript block (lines 1054–1214), restoring clean, single-definition script execution.
+   - Confirmed `socket.on('connect')` sets `connectionText.textContent = 'Live Connected'` and updates status indicator badge.
+2. **[`test_fallback_system.py`](file:///c:/github/textline/test_fallback_system.py)**:
+   - Added **Test 35** (`test_35_socketio_connect_initialization_path`) using `socketio.test_client(app)` to assert that client connection triggers both `status_update` (`Connected to server...`) and `health_matrix_update` payloads.
+
+---
+
+## 3. Test Results & Standalone Executable Build
+
+### Unit Test Suite Results
+Ran full unit test suite (`python -m unittest test_fallback_system.py`):
+```text
+RESULTS -> FAILURES: 0, ERRORS: 0, TOTAL: 36
+```
+All **36/36 tests passed** cleanly.
+
+### Standalone Executable Rebuild
+Recompiled standalone executable via PyInstaller (`python -m PyInstaller app.spec --clean`):
+```text
+Build complete! The results are available in: C:\github\textline\dist\app.exe
+```
+Executable compiled with zero errors.
