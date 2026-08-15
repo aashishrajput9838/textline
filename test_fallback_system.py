@@ -1237,9 +1237,11 @@ class TestFallbackSystem(unittest.TestCase):
         m_vid = MagicMock(); m_vid.name = "models/gemini-3.7-flash-video-understanding-eap"
         m_aud = MagicMock(); m_aud.name = "models/gemini-audio-transcribe"
         m_emb = MagicMock(); m_emb.name = "models/gemini-embedding-001"
-        m_valid = MagicMock(); m_valid.name = "models/gemini-flash-latest"
+        m_v1 = MagicMock(); m_v1.name = "models/gemini-2.5-flash"
+        m_v2 = MagicMock(); m_v2.name = "models/gemini-flash-lite-latest"
+        m_v3 = MagicMock(); m_v3.name = "models/gemini-flash-latest"
 
-        mock_client.models.list.return_value = [m_tts, m_vid, m_aud, m_emb, m_valid]
+        mock_client.models.list.return_value = [m_tts, m_vid, m_aud, m_emb, m_v1, m_v2, m_v3]
 
         discovered = get_available_gemini_models(mock_client)
 
@@ -1251,6 +1253,66 @@ class TestFallbackSystem(unittest.TestCase):
             self.assertNotIn(invalid_name, discovered, f"{invalid_name} should be excluded from model discovery")
 
         print("[PASS] Test 42: Specialized non-generative models filtered from discovery verified!")
+
+    @patch("app.genai.Client")
+    def test_43_hard_runtime_guard_blocks_unsupported_models(self, mock_genai_client):
+        """
+        43. Test Hard Runtime Guard Blocks Any Model Outside SUPPORTED_HEALTH_MODELS:
+        Asserts that even if model discovery returns arbitrary model strings, the live generation
+        selection loop filters them using set(SUPPORTED_HEALTH_MODELS).
+        """
+        from ai.gemini import generate_content_with_fallback
+        from config.constants import SUPPORTED_HEALTH_MODELS
+
+        mock_client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.text = "Guard Pass"
+        mock_client.models.generate_content.return_value = mock_resp
+
+        # Mock model_manager to return invalid models along with valid ones
+        m_tts = MagicMock(); m_tts.name = "models/gemini-2.5-flash-preview-tts"
+        m_valid = MagicMock(); m_valid.name = "models/gemini-2.5-flash"
+        mock_client.models.list.return_value = [m_tts, m_valid]
+        mock_genai_client.return_value = mock_client
+
+        test_env_keys = {"1_key": "fake_key_1"}
+
+        with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
+            result, meta = generate_content_with_fallback(["test_prompt"])
+            self.assertIn(meta["model"], set(SUPPORTED_HEALTH_MODELS))
+            self.assertNotIn("gemini-2.5-flash-preview-tts", meta["model"])
+
+        print("[PASS] Test 43: Hard runtime guard blocking unsupported models verified!")
+
+    def test_44_canonical_model_fallback_sequence_order(self):
+        """
+        44. Test Canonical Model Fallback Sequence Ordering Preservation:
+        Asserts that get_available_gemini_models() preserves exact canonical fallback order:
+        gemini-2.5-flash -> gemini-flash-lite-latest -> gemini-flash-latest
+        even when client.models.list() returns models in a shuffled order (e.g. flash-latest first).
+        """
+        from ai.model_manager import get_available_gemini_models
+        from config.constants import SUPPORTED_HEALTH_MODELS
+
+        # Expected canonical fallback sequence order
+        expected_canonical_order = ["gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest"]
+        self.assertEqual(SUPPORTED_HEALTH_MODELS, expected_canonical_order)
+
+        # Mock API returning models in reverse/shuffled order
+        mock_client = MagicMock()
+        m_latest = MagicMock(); m_latest.name = "models/gemini-flash-latest"
+        m_lite = MagicMock(); m_lite.name = "models/gemini-flash-lite-latest"
+        m_flash = MagicMock(); m_flash.name = "models/gemini-2.5-flash"
+
+        # Shuffled API discovery order
+        mock_client.models.list.return_value = [m_latest, m_lite, m_flash]
+
+        discovered = get_available_gemini_models(mock_client)
+
+        # Assert returned list strictly matches canonical fallback order
+        self.assertEqual(discovered, expected_canonical_order)
+
+        print("[PASS] Test 44: Canonical model fallback sequence ordering preservation verified!")
 
 if __name__ == '__main__':
     unittest.main()

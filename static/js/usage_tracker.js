@@ -173,7 +173,7 @@ function renderUsageTracker() {
         return;
     }
 
-    const defaultModels = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest'];
+    const defaultModels = ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-flash-latest'];
 
     keysToDisplay.forEach(keyId => {
         const keyInfo = dayData[keyId] || { used: 0, last_used: '', model: '', models: {} };
