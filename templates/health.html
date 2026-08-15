@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <div class="panel-title">🔑 API KEY HEALTH MONITOR</div>
+        <button id="test-all-keys-btn" class="btn-primary" onclick="runKeyHealthCheck()">
+            🧪 Test All API Keys
+        </button>
+    </div>
+    
+    <div id="key-health-placeholder" style="font-size: 12px; color: #64748b;">
+        Click <strong>"🧪 Test All API Keys"</strong> to run an independent diagnostic scan across all configured credentials.
+    </div>
+    
+    <div id="key-health-loading" style="display: none; align-items: center; gap: 10px; color: #94a3b8; font-size: 12px;">
+        <div style="width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+        <span id="key-health-status-text">Scanning configured API keys...</span>
+    </div>
+
+    <div id="key-health-summary" class="health-summary-bar" style="display: none;"></div>
+
+    <div id="key-health-table-wrapper" style="display: none; overflow-x: auto;">
+        <table class="key-health-table">
+            <thead>
+                <tr>
+                    <th>Key ID</th>
+                    <th>Model</th>
+                    <th>Status</th>
+                    <th>Latency</th>
+                    <th>HTTP / Details</th>
+                </tr>
+            </thead>
+            <tbody id="key-health-tbody">
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/health_monitor.js') }}"></script>
+{% endblock %}

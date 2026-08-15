@@ -132,7 +132,23 @@ def _register_routes(app: Flask, socketio: SocketIO):
     
     @app.route('/')
     def index():
-        return render_template('index.html')
+        return render_template('index.html', active_page='monitor')
+
+    @app.route('/monitor')
+    def monitor():
+        return render_template('index.html', active_page='monitor')
+
+    @app.route('/health')
+    def health():
+        return render_template('health.html', active_page='health')
+
+    @app.route('/usage')
+    def usage():
+        return render_template('usage.html', active_page='usage')
+
+    @app.route('/history')
+    def history():
+        return render_template('history.html', active_page='history')
 
     @app.route('/api/test-keys')
     def api_test_keys():

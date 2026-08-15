@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header" style="flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="panel-title">📊 DAILY API KEY USAGE</div>
+            <span id="usage-persistence-status" style="font-size: 11px; color: #34d399; background: rgba(16, 185, 129, 0.12); padding: 2px 6px; border-radius: 4px;">localStorage persistent</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <select id="usage-date-select" class="btn-action" style="outline: none;" onchange="renderUsageTracker()"></select>
+            <button class="btn-action" onclick="configureDailyLimit()" title="Configure Daily Limit per key">⚙️ Set Limit</button>
+        </div>
+    </div>
+
+    <div id="usage-tracker-container" class="usage-tracker-container">
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/usage_tracker.js') }}"></script>
+{% endblock %}
