@@ -100,10 +100,11 @@ class TestFallbackSystem(unittest.TestCase):
 
         mock_genai_client.side_effect = client_factory
 
+        from config.constants import SUPPORTED_HEALTH_MODELS
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "def solution_key2(): pass")
-            self.assertEqual(mock_client_key1.models.generate_content.call_count, 3)
+            self.assertEqual(mock_client_key1.models.generate_content.call_count, len(SUPPORTED_HEALTH_MODELS))
             
             # Metadata Provenance Assertions
             self.assertEqual(meta["provider"], "Google Gemini")
@@ -111,6 +112,7 @@ class TestFallbackSystem(unittest.TestCase):
             self.assertTrue(meta["is_fallback"])
 
         print("[PASS] Test 3: Instant fail-fast rotation on 400/403/404 with metadata provenance verified!")
+
 
     @patch("app.genai.Client")
     def test_4_rate_limit_429_rotation(self, mock_genai_client):
@@ -307,10 +309,11 @@ class TestFallbackSystem(unittest.TestCase):
                 aspirinexar_keys = [k for k in discovered.keys() if k.lower() == "aspirinexar"]
                 self.assertEqual(len(aspirinexar_keys), 1)
 
-                # Assert health check matrix produces 3 aspirinexar entries (1 per supported model)
+                # Assert health check matrix produces len(SUPPORTED_HEALTH_MODELS) aspirinexar entries (1 per supported model)
+                from config.constants import SUPPORTED_HEALTH_MODELS
                 results = run_all_keys_health_check()
                 aspirinexar_results = [r for r in results if r["key_id"].lower() == "aspirinexar"]
-                self.assertEqual(len(aspirinexar_results), 3)
+                self.assertEqual(len(aspirinexar_results), len(SUPPORTED_HEALTH_MODELS))
 
         print("[PASS] Test 8: Case-insensitive key deduplication verified!")
 
@@ -642,9 +645,9 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Answer")
-            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
+            self.assertEqual(meta["model"], "gemini-3.5-flash-lite")
             self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-2.5-flash"]["status"], "QUOTA_EXHAUSTED")
-            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-flash-lite-latest"]["status"], "WORKING")
+            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-3.5-flash-lite"]["status"], "WORKING")
 
         print("[PASS] Test 22: Model-specific quota exhaustion verified!")
 
@@ -652,7 +655,7 @@ class TestFallbackSystem(unittest.TestCase):
     def test_23_model_specific_404_preserves_key(self, mock_genai_client):
         """
         23. Test Model-Specific 404 Preserves Key:
-        Key 1 returns 404 on model A (gemini-2.5-flash) but succeeds on model B (gemini-flash-lite-latest).
+        Key 1 returns 404 on model A (gemini-2.5-flash) but succeeds on model B (gemini-3.5-flash-lite).
         Key is NOT marked globally invalid.
         """
         from app import KEY_MODEL_HEALTH_REGISTRY
@@ -675,9 +678,9 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Success")
-            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
+            self.assertEqual(meta["model"], "gemini-3.5-flash-lite")
             self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-2.5-flash"]["status"], "MODEL_UNAVAILABLE")
-            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-flash-lite-latest"]["status"], "WORKING")
+            self.assertEqual(KEY_MODEL_HEALTH_REGISTRY["1_key"]["gemini-3.5-flash-lite"]["status"], "WORKING")
 
         print("[PASS] Test 23: Model-specific 404 preserves key validity verified!")
 
@@ -716,7 +719,10 @@ class TestFallbackSystem(unittest.TestCase):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Key 2 Model B Answer")
             self.assertEqual(meta["key_id"], "2_key")
-            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
+            self.assertEqual(meta["model"], "gemini-3.5-flash-lite")
+
+        print("[PASS] Test 24: Key 2 404 does not mark Key 2 globally invalid verified!")
+
 
         print("[PASS] Test 24: Key 2 404 does not mark Key 2 globally invalid verified!")
 
@@ -786,9 +792,9 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Answer")
-            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
+            self.assertEqual(meta["model"], "gemini-3.5-flash-lite")
             # gemini-2.5-flash was skipped!
-            mock_client.models.generate_content.assert_called_once_with(model="gemini-flash-lite-latest", contents=["test_prompt"])
+            mock_client.models.generate_content.assert_called_once_with(model="gemini-3.5-flash-lite", contents=["test_prompt"])
 
         print("[PASS] Test 27: Skipping known QUOTA_EXHAUSTED combination verified!")
 
@@ -814,8 +820,8 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model B Answer")
-            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
-            mock_client.models.generate_content.assert_called_once_with(model="gemini-flash-lite-latest", contents=["test_prompt"])
+            self.assertEqual(meta["model"], "gemini-3.5-flash-lite")
+            mock_client.models.generate_content.assert_called_once_with(model="gemini-3.5-flash-lite", contents=["test_prompt"])
 
         print("[PASS] Test 28: Skipping known MODEL_UNAVAILABLE combination verified!")
 
@@ -922,7 +928,7 @@ class TestFallbackSystem(unittest.TestCase):
         def generate_side_effect(model, contents):
             if model == "gemini-2.5-flash":
                 raise Exception("429 RESOURCE_EXHAUSTED: Daily quota reached")
-            elif model == "gemini-flash-lite-latest":
+            elif model == "gemini-3.5-flash-lite":
                 raise Exception("404 NOT_FOUND: Model unavailable")
             return mock_resp
 
@@ -934,7 +940,7 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model C Success")
-            self.assertEqual(meta["model"], "gemini-flash-latest")
+            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
             self.assertEqual(meta["attempt_count"], 3)
             self.assertTrue(meta["model_fallback"])
             self.assertFalse(meta["key_fallback"])
@@ -956,7 +962,7 @@ class TestFallbackSystem(unittest.TestCase):
 
         # Pre-seed health state
         update_key_model_health("1_key", "gemini-2.5-flash", "QUOTA_EXHAUSTED", 429)
-        update_key_model_health("1_key", "gemini-flash-lite-latest", "MODEL_UNAVAILABLE", 404)
+        update_key_model_health("1_key", "gemini-3.5-flash-lite", "MODEL_UNAVAILABLE", 404)
 
         mock_client = MagicMock()
         mock_resp = MagicMock()
@@ -969,7 +975,7 @@ class TestFallbackSystem(unittest.TestCase):
         with patch.dict("app.API_KEYS_MAP", test_env_keys, clear=True):
             result, meta = generate_content_with_fallback(["test_prompt"])
             self.assertEqual(result, "Model C Immediate Success")
-            self.assertEqual(meta["model"], "gemini-flash-latest")
+            self.assertEqual(meta["model"], "gemini-flash-lite-latest")
             self.assertEqual(meta["attempt_count"], 1)
             self.assertFalse(meta["model_fallback"])
             self.assertFalse(meta["key_fallback"])
@@ -1085,19 +1091,12 @@ class TestFallbackSystem(unittest.TestCase):
         """
         import time
         from app import KEY_MODEL_HEALTH_REGISTRY, generate_content_with_fallback, NoAvailableModelError
+        from config.constants import SUPPORTED_HEALTH_MODELS
         KEY_MODEL_HEALTH_REGISTRY.clear()
 
         # Mark Key 1 and Key 2 combinations as dead
-        KEY_MODEL_HEALTH_REGISTRY["1_key"] = {
-            "gemini-2.5-flash": {"status": "QUOTA_EXHAUSTED"},
-            "gemini-flash-lite-latest": {"status": "MODEL_UNAVAILABLE"},
-            "gemini-flash-latest": {"status": "QUOTA_EXHAUSTED"}
-        }
-        KEY_MODEL_HEALTH_REGISTRY["2_key"] = {
-            "gemini-2.5-flash": {"status": "MODEL_UNAVAILABLE"},
-            "gemini-flash-lite-latest": {"status": "MODEL_UNAVAILABLE"},
-            "gemini-flash-latest": {"status": "QUOTA_EXHAUSTED"}
-        }
+        KEY_MODEL_HEALTH_REGISTRY["1_key"] = {m: {"status": "QUOTA_EXHAUSTED"} for m in SUPPORTED_HEALTH_MODELS}
+        KEY_MODEL_HEALTH_REGISTRY["2_key"] = {m: {"status": "MODEL_UNAVAILABLE"} for m in SUPPORTED_HEALTH_MODELS}
 
         test_env_keys = {"1_key": "fake_key_1", "2_key": "fake_key_2"}
 
@@ -1230,7 +1229,6 @@ class TestFallbackSystem(unittest.TestCase):
         (e.g., -tts, -video-, -audio, -embed) and uses clean DEFAULT_GEMINI_MODELS source of truth.
         """
         from ai.model_manager import get_available_gemini_models
-        from config.constants import DEFAULT_GEMINI_MODELS
 
         mock_client = MagicMock()
         m_tts = MagicMock(); m_tts.name = "models/gemini-2.5-flash-preview-tts"
@@ -1238,16 +1236,22 @@ class TestFallbackSystem(unittest.TestCase):
         m_aud = MagicMock(); m_aud.name = "models/gemini-audio-transcribe"
         m_emb = MagicMock(); m_emb.name = "models/gemini-embedding-001"
         m_v1 = MagicMock(); m_v1.name = "models/gemini-2.5-flash"
-        m_v2 = MagicMock(); m_v2.name = "models/gemini-flash-lite-latest"
-        m_v3 = MagicMock(); m_v3.name = "models/gemini-flash-latest"
+        m_v2 = MagicMock(); m_v2.name = "models/gemini-3.5-flash-lite"
+        m_v3 = MagicMock(); m_v3.name = "models/gemini-flash-lite-latest"
+        m_v4 = MagicMock(); m_v4.name = "models/gemini-3.1-flash-lite"
+        m_v5 = MagicMock(); m_v5.name = "models/gemini-3.5-flash"
+        m_v6 = MagicMock(); m_v6.name = "models/gemini-3.6-flash"
+        m_v7 = MagicMock(); m_v7.name = "models/gemini-3.7-flash"
+        m_v8 = MagicMock(); m_v8.name = "models/gemini-flash-latest"
 
-        mock_client.models.list.return_value = [m_tts, m_vid, m_aud, m_emb, m_v1, m_v2, m_v3]
+        mock_client.models.list.return_value = [m_tts, m_vid, m_aud, m_emb, m_v1, m_v2, m_v3, m_v4, m_v5, m_v6, m_v7, m_v8]
 
         discovered = get_available_gemini_models(mock_client)
 
+        self.assertEqual(len(discovered), 8)
         self.assertIn("gemini-2.5-flash", discovered)
+        self.assertIn("gemini-3.5-flash-lite", discovered)
         self.assertIn("gemini-flash-lite-latest", discovered)
-        self.assertIn("gemini-flash-latest", discovered)
 
         for invalid_name in ["gemini-2.5-flash-preview-tts", "gemini-3.7-flash-video-understanding-eap", "gemini-audio-transcribe", "gemini-embedding-001"]:
             self.assertNotIn(invalid_name, discovered, f"{invalid_name} should be excluded from model discovery")
@@ -1288,29 +1292,40 @@ class TestFallbackSystem(unittest.TestCase):
         """
         44. Test Canonical Model Fallback Sequence Ordering Preservation:
         Asserts that get_available_gemini_models() preserves exact canonical fallback order:
-        gemini-2.5-flash -> gemini-flash-lite-latest -> gemini-flash-latest
-        even when client.models.list() returns models in a shuffled order (e.g. flash-latest first).
+        gemini-2.5-flash -> gemini-3.5-flash-lite -> gemini-flash-lite-latest -> gemini-3.1-flash-lite ->
+        gemini-3.5-flash -> gemini-3.6-flash -> gemini-3.7-flash -> gemini-flash-latest
+        even when client.models.list() returns models in a shuffled order.
         """
         from ai.model_manager import get_available_gemini_models
-        from config.constants import SUPPORTED_HEALTH_MODELS
+        from config.constants import SUPPORTED_HEALTH_MODELS, DEFAULT_GEMINI_MODELS
 
-        # Expected canonical fallback sequence order
-        expected_canonical_order = ["gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest"]
+        expected_canonical_order = [
+            "gemini-2.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.6-flash",
+            "gemini-3.7-flash",
+            "gemini-flash-latest"
+        ]
         self.assertEqual(SUPPORTED_HEALTH_MODELS, expected_canonical_order)
+        self.assertEqual(DEFAULT_GEMINI_MODELS, expected_canonical_order)
 
         # Mock API returning models in reverse/shuffled order
         mock_client = MagicMock()
         m_latest = MagicMock(); m_latest.name = "models/gemini-flash-latest"
         m_lite = MagicMock(); m_lite.name = "models/gemini-flash-lite-latest"
+        m_35_lite = MagicMock(); m_35_lite.name = "models/gemini-3.5-flash-lite"
         m_flash = MagicMock(); m_flash.name = "models/gemini-2.5-flash"
 
         # Shuffled API discovery order
-        mock_client.models.list.return_value = [m_latest, m_lite, m_flash]
+        mock_client.models.list.return_value = [m_latest, m_lite, m_35_lite, m_flash]
 
         discovered = get_available_gemini_models(mock_client)
 
-        # Assert returned list strictly matches canonical fallback order
-        self.assertEqual(discovered, expected_canonical_order)
+        expected_subset = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-flash-latest"]
+        self.assertEqual(discovered, expected_subset)
 
         print("[PASS] Test 44: Canonical model fallback sequence ordering preservation verified!")
 

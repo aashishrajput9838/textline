@@ -1,0 +1,203 @@
+# Monitor State Persistence — Implementation Plan
+
+## Problem
+
+The multi-page dashboard architecture uses full-page Flask navigation. When the user navigates away from `/monitor`, the DOM, JavaScript state, and Socket.IO connection are destroyed. Returning to `/monitor` recreates the page in its initial empty state, losing the previous screenshot, answer, provenance, and pipeline logs.
+
+If processing completes while the user is on another page (`/health`, `/usage`, `/history`), the `status_update` event arrives at the *other page's* Socket.IO connection, where the Monitor DOM elements don't exist — the result is silently lost.
+
+## Proposed Changes
+
+### Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Socket.IO Events        →   Save to sessionStorage      │
+│  (status_update,              (textline_monitor_state_v1) │
+│   image_preview,                                         │
+│   pipeline_log)                                          │
+└──────────────────────────┬───────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────┐
+│  /monitor loads  →  Read sessionStorage  →  Restore DOM  │
+│                      (screenshot, answer, provenance,    │
+│                       pipeline logs, active route, etc.) │
+└──────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────┐
+│  Navigation DURING processing:                           │
+│  Events still arrive at the new page's Socket.IO.        │
+│  socket_events.js persists state to sessionStorage       │
+│  regardless of which DOM elements exist.                 │
+│  On return to /monitor, latest state is restored.        │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### [MODIFY] [socket_events.js](file:///c:/github/textline/static/js/socket_events.js)
+
+**What changes**: Add Monitor state persistence to `sessionStorage` whenever key events fire.
+
+1. Define `MONITOR_STATE_KEY = 'textline_monitor_state_v1'`.
+2. After `status_update` handler updates DOM (or would update DOM if elements existed), **also** save the critical state to `sessionStorage`:
+   - `status` (processing/success/error/idle)
+   - `answer` (the full answer text)
+   - `message` (status message)
+   - `timestamp`
+   - `metadata` (full provenance object)
+   - `pipeline_id`
+   - `activeRouteStr` (the computed route string)
+3. After `image_preview` handler, save `imageUrl` to the same state object.
+4. After `pipeline_log` handler, append the log entry data to a `pipelineLogs` array in the state (capped at 200 entries).
+5. Use a helper `saveMonitorState(updates)` that merges updates into the existing state and writes once.
+
+> [!IMPORTANT]
+> This runs on ALL pages (socket_events.js loads via base.html). Even when on `/health`, if a `status_update` arrives, it persists the Monitor state to `sessionStorage`. This is the key mechanism that handles "navigation during processing".
+
+---
+
+### [NEW] [monitor_restore.js](file:///c:/github/textline/static/js/monitor_restore.js)
+
+**What it does**: Restores Monitor DOM state from `sessionStorage` when `/monitor` loads.
+
+1. Reads `textline_monitor_state_v1` from `sessionStorage`.
+2. If valid state exists with `status === 'success'`:
+   - Sets `#preview-image.src` and shows the image / hides placeholder.
+   - Sets `#answer-text.textContent` and shows it / hides placeholder.
+   - Shows `#copy-btn`.
+   - Restores provenance panel fields (`#prov-provider-model`, `#prov-key-id`, `#prov-fallback`, etc.).
+   - Shows `#provenance-container`.
+   - Restores `#active-route-display` text and color.
+   - Restores `#status-badge` to "SUCCESS".
+   - Restores `#status-provenance-tag`.
+3. If state has `status === 'processing'`:
+   - Shows processing indicators.
+   - The live Socket.IO connection will deliver fresh events that update normally.
+4. If state has `status === 'error'`:
+   - Restores error message and badge.
+5. Restores pipeline log entries from `pipelineLogs` array into `#pipeline-log-console`.
+6. Restores `#pipeline-id-badge` text.
+7. Restores `#pipeline-summary-banner` if present.
+
+Loaded ONLY on `/monitor` via `index.html`'s `{% block scripts %}`.
+
+---
+
+### [MODIFY] [index.html](file:///c:/github/textline/templates/index.html)
+
+Add `monitor_restore.js` script after `pipeline_logger.js`:
+
+```html
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pipeline_logger.js') }}"></script>
+<script src="{{ url_for('static', filename='js/monitor_restore.js') }}"></script>
+{% endblock %}
+```
+
+---
+
+### [MODIFY] [pipeline_logger.js](file:///c:/github/textline/static/js/pipeline_logger.js)
+
+**Minimal change**: After `clearPipelineLogs()` is called, also clear the `pipelineLogs` array from the persisted Monitor state (but preserve screenshot/answer/provenance).
+
+---
+
+### Files NOT modified
+
+- `server/flask_app.py` — No backend changes needed.
+- `pipeline/pipeline.py` — No backend changes.
+- `ai/gemini.py` — No changes.
+- `static/js/usage_tracker.js` — No changes.
+- `static/js/health_monitor.js` — No changes.
+- `static/js/ui_controller.js` — No changes (history persistence unchanged).
+- `templates/base.html` — No changes.
+- `templates/health.html`, `templates/usage.html`, `templates/history.html` — No changes.
+
+---
+
+## Data Contracts
+
+### sessionStorage key: `textline_monitor_state_v1`
+
+```json
+{
+  "status": "success",
+  "answer": "Full answer text...",
+  "message": "Done! Answer copied to clipboard.",
+  "timestamp": "01:45:03",
+  "imageUrl": "/static/screenshots/screenshot_xxx.png",
+  "metadata": {
+    "provider": "Google Gemini",
+    "model": "gemini-flash-lite-latest",
+    "key_id": "1_textline_gemini_9838_AlReasoningValidationSystem",
+    "is_fallback": false,
+    "model_fallback": false,
+    "key_fallback": false,
+    "attempt_count": 1,
+    "generation_id": "gen_xxx"
+  },
+  "activeRouteStr": "1_textline_gemini_9838_Al... → gemini-flash-lite-latest",
+  "pipelineId": "PIPE_xxx",
+  "pipelineLogs": [
+    { "timestamp": "01:44:58", "level": "RUNNING", "stage": "IMAGE_CAPTURE", "message": "..." },
+    ...
+  ],
+  "pipelineSummary": {
+    "visible": true,
+    "className": "pipeline-summary-banner success",
+    "text": "FINAL STATUS: SUCCESS | TOTAL TIME: 2340 ms"
+  }
+}
+```
+
+### Preserved existing keys (unchanged)
+
+- `textline_usage_v1` (localStorage) — Usage tracking.
+- `textline_history_v1` (sessionStorage) — Session history.
+
+---
+
+## Key Design Decisions
+
+1. **sessionStorage over localStorage**: Monitor state is session-scoped. A new browser tab starts fresh — this matches the user's mental model.
+
+2. **State saved from ALL pages**: `socket_events.js` loads on every page via `base.html`. Even when the user is on `/health`, if `status_update(success)` arrives, it gets persisted. This solves "navigation during processing" without any backend changes.
+
+3. **No duplicate history entries**: `addHistoryItem()` is only called from `socket_events.js` on `status_update(success)` — it's called once per event regardless of page. The restore function on `/monitor` does NOT re-add history.
+
+4. **No new backend endpoint**: The existing Socket.IO broadcast delivers events to whichever page is active. We simply persist the state client-side.
+
+5. **Generation ID deduplication**: The state object includes `metadata.generation_id`. Restore only shows the latest. Newer events always overwrite older state.
+
+6. **Clear Logs only clears logs**: `clearPipelineLogs()` clears `pipelineLogs` from persisted state but does NOT clear screenshot/answer/provenance.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+```bash
+python -m unittest test_fallback_system.py
+# Expected: 42/42 PASSING
+```
+
+### Code Quality
+```bash
+git diff --check
+# Expected: 0 warnings/errors
+```
+
+### Manual Browser Tests
+
+| Test | Steps | Expected |
+|------|-------|----------|
+| **A: Normal persistence** | Generate result → navigate `/health` → return `/monitor` | Screenshot + answer + provenance + logs visible |
+| **B: During processing** | Start screenshot → immediately navigate `/health` → wait → return `/monitor` | Completed result visible |
+| **C: Multiple requests** | Generate A → Generate B → navigate away → return | Only latest result B shown |
+| **D: Fresh session** | New tab → `/monitor` | Empty initial state ("No screenshot detected yet.") |
+| **E: History isolation** | Generate → navigate → return | `textline_history_v1` has no duplicates |
+| **F: Clear logs** | Generate → Clear Logs → navigate → return | Logs cleared, screenshot/answer preserved |
+

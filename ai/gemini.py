@@ -7,7 +7,7 @@ import os
 from google import genai
 
 from config.settings import API_KEYS_MAP
-from config.constants import PROJECT_METADATA_MAP
+from config.constants import PROJECT_METADATA_MAP, SUPPORTED_HEALTH_MODELS
 from ai.model_manager import get_available_gemini_models
 from ai.health_registry import (
     KEY_MODEL_HEALTH_REGISTRY,
@@ -66,6 +66,10 @@ def generate_content_with_fallback(contents, base64_image_url=None, pipeline_id=
 
         models_to_query = get_available_gemini_models(client)
         
+        # Hard runtime guard: restrict models strictly to SUPPORTED_HEALTH_MODELS
+        allowed_models = set(SUPPORTED_HEALTH_MODELS)
+        models_to_query = [m for m in models_to_query if m in allowed_models]
+
         for model_name in models_to_query:
             if "2.5-pro" in model_name or "2.0-flash" in model_name:
                 continue
